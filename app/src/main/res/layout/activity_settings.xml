@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1a1a2e">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:paddingTop="48dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings"
+            android:textSize="28sp"
+            android:textColor="#e0e0e0"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+    <!-- Server section -->
+    <LinearLayout
+        android:id="@+id/settings_change_server"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?android:attr/selectableItemBackground"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_server"
+            android:textSize="16sp"
+            android:textColor="#e0e0e0" />
+
+        <TextView
+            android:id="@+id/settings_current_url"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textColor="#80e0e0e0"
+            android:paddingTop="2dp" />
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1a4a90d9"
+        android:layout_marginHorizontal="24dp" />
+
+    <!-- Clear cache -->
+    <LinearLayout
+        android:id="@+id/settings_clear_cache"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?android:attr/selectableItemBackground"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_clear_cache_title"
+            android:textSize="16sp"
+            android:textColor="#e0e0e0" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_clear_cache_desc"
+            android:textSize="13sp"
+            android:textColor="#80e0e0e0"
+            android:paddingTop="2dp" />
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#1a4a90d9"
+        android:layout_marginHorizontal="24dp" />
+
+    <!-- About -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_about"
+            android:textSize="16sp"
+            android:textColor="#e0e0e0" />
+
+        <TextView
+            android:id="@+id/settings_version_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textColor="#80e0e0e0"
+            android:paddingTop="2dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

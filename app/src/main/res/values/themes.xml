@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Trek" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#FF4A90D9</item>
+        <item name="colorPrimaryVariant">#FF3A7BC0</item>
+        <item name="colorOnPrimary">#FFE0E0E0</item>
+        <item name="colorSecondary">#FF4A90D9</item>
+        <item name="colorSecondaryVariant">#FF3A7BC0</item>
+        <item name="colorOnSecondary">#FFE0E0E0</item>
+        <item name="android:statusBarColor">#FF1A1A2E</item>
+        <item name="android:navigationBarColor">#FF1A1A2E</item>
+        <item name="android:windowBackground">#FF1A1A2E</item>
+    </style>
+
+    <style name="Theme.Trek.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+        <item name="android:background">#FF222240</item>
+        <item name="android:textColorPrimary">#FFE0E0E0</item>
+        <item name="android:textColorSecondary">#80E0E0E0</item>
+        <item name="colorAccent">#FF4A90D9</item>
+    </style>
+</resources>
