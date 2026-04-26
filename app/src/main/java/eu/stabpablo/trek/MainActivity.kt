@@ -65,20 +65,31 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         CookieManager.getInstance().setAcceptCookie(true)
 
         val density = resources.displayMetrics.density
-        val handleWidth = (32 * density).toInt()
-        val handleHeight = (4 * density).toInt()
-        val handleMargin = (8 * density).toInt()
-        val handleRadius = (2 * density)
+        val touchTargetWidth = (80 * density).toInt()
+        val touchTargetHeight = (48 * density).toInt()
 
-        val handleBar = View(this).apply {
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0x66E0E0E0.toInt())
-                cornerRadius = handleRadius
-            }
-            contentDescription = getString(R.string.settings)
+        // Visible bar is small (40x5dp), but wrapped in a 80x48dp touch target
+        val handleTouchTarget = FrameLayout(this).apply {
             isClickable = true
             isFocusable = true
+            contentDescription = getString(R.string.settings)
             setOnClickListener { showSettings() }
+
+            val barWidth = (40 * density).toInt()
+            val barHeight = (5 * density).toInt()
+            val barRadius = (3 * density)
+
+            val bar = View(this@MainActivity).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0x99555555.toInt())
+                    cornerRadius = barRadius
+                }
+                elevation = 4 * density
+            }
+
+            addView(bar, FrameLayout.LayoutParams(barWidth, barHeight).apply {
+                gravity = Gravity.CENTER
+            })
         }
 
         return FrameLayout(this).apply {
@@ -87,9 +98,8 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
 
-            addView(handleBar, FrameLayout.LayoutParams(handleWidth, handleHeight).apply {
+            addView(handleTouchTarget, FrameLayout.LayoutParams(touchTargetWidth, touchTargetHeight).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = handleMargin
             })
 
             // Apply system bar insets to root layout — prevents content behind status/nav bars
