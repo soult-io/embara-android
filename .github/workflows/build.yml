@@ -73,11 +73,31 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Build release APK
+      - name: Decode signing keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > trek-release.jks
+
+      - name: Build signed release APK
         run: ./gradlew assembleRelease
+        env:
+          TREK_KEYSTORE_FILE: ${{ github.workspace }}/trek-release.jks
+          TREK_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          TREK_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          TREK_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Generate SHA-256 checksum
+        run: |
+          cd app/build/outputs/apk/release
+          APK=$(ls *.apk | head -1)
+          sha256sum "$APK" > "$APK.sha256"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/app-release-unsigned.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/*.sha256
           generate_release_notes: true
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f trek-release.jks
