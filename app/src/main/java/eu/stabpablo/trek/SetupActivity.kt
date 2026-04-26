@@ -8,7 +8,6 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
-import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -52,13 +51,13 @@ class SetupActivity : AppCompatActivity() {
     }
 
     private fun attemptConnect() {
-        val rawInput = urlInput.text?.toString()?.trim().orEmpty()
-        if (rawInput.isEmpty()) {
+        val rawInput = urlInput.text?.toString().orEmpty()
+        if (UrlValidator.isEmpty(rawInput)) {
             showError(getString(R.string.setup_error_empty))
             return
         }
 
-        val url = normalizeUrl(rawInput)
+        val url = UrlValidator.normalize(rawInput)
         urlInput.setText(url)
 
         hideKeyboard()
@@ -83,22 +82,8 @@ class SetupActivity : AppCompatActivity() {
         }
     }
 
-    private fun normalizeUrl(input: String): String {
-        val trimmed = input.trimEnd('/')
-        return when {
-            trimmed.startsWith("https://") -> trimmed
-            trimmed.startsWith("http://") -> trimmed
-            else -> "https://$trimmed"
-        }
-    }
-
-    private fun isValidScheme(url: String): Boolean {
-        val uri = Uri.parse(url)
-        return uri.scheme == "https" || uri.scheme == "http"
-    }
-
     private fun validateUrl(url: String): String? {
-        if (!isValidScheme(url)) {
+        if (!UrlValidator.isValidScheme(url)) {
             return getString(R.string.setup_error_scheme)
         }
         return try {
