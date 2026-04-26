@@ -16,7 +16,6 @@ import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.Insets
-import androidx.core.text.htmlEncode
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -42,8 +41,12 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
         setupBackNavigation()
 
+        // C1: restoreState doesn't restore the page after process death — fall back to loadUrl
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
+            if (webView.url.isNullOrEmpty()) {
+                webView.loadUrl(serverUrl)
+            }
         } else {
             webView.loadUrl(serverUrl)
         }
@@ -57,18 +60,24 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             settings.loadWithOverviewMode = true
             settings.useWideViewPort = true
             settings.setSupportZoom(false)
+            // H5: Explicitly disable file/content access to prevent local file reads via XSS
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
 
             webViewClient = createWebViewClient()
             webChromeClient = WebChromeClient()
         }
 
-        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            // H8: Explicitly disable third-party cookies
+            setAcceptThirdPartyCookies(webView, false)
+        }
 
         val density = resources.displayMetrics.density
         val touchTargetWidth = (80 * density).toInt()
         val touchTargetHeight = (48 * density).toInt()
 
-        // Visible bar is small (40x5dp), but wrapped in a 80x48dp touch target
         val handleTouchTarget = FrameLayout(this).apply {
             isClickable = true
             isFocusable = true
@@ -102,7 +111,6 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             })
 
-            // Apply system bar insets to root layout — prevents content behind status/nav bars
             ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
                 val types = WindowInsetsCompat.Type.systemBars() or
                         WindowInsetsCompat.Type.displayCutout()
@@ -110,7 +118,6 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
                 view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
 
-                // Zero out handled insets so WebView doesn't double-apply via CSS safe-area
                 WindowInsetsCompat.Builder(windowInsets)
                     .setInsets(types, Insets.NONE)
                     .build()
@@ -118,7 +125,10 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         }
     }
 
+    // M6: Guard against IllegalStateException after onSaveInstanceState
     private fun showSettings() {
+        if (supportFragmentManager.isStateSaved) return
+        if (supportFragmentManager.findFragmentByTag(SettingsBottomSheet.TAG) != null) return
         val sheet = SettingsBottomSheet.newInstance(
             serverUrl = serverUrl,
             appVersion = getAppVersion()
@@ -140,8 +150,6 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         "unknown"
     }
 
-    // SettingsBottomSheet.Listener callbacks
-
     override fun onChangeServer() {
         TrekPrefs.clearServerUrl(this)
         startActivity(Intent(this, SetupActivity::class.java).apply {
@@ -150,10 +158,11 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         finish()
     }
 
+    // H2: Load server URL directly instead of reload() which might reload the error page
     override fun onClearCache() {
         android.webkit.WebStorage.getInstance().deleteAllData()
         CookieManager.getInstance().removeAllCookies(null)
-        webView.reload()
+        webView.loadUrl(serverUrl)
     }
 
     private fun createWebViewClient(): WebViewClient = object : WebViewClient() {
@@ -179,10 +188,20 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             error: WebResourceError
         ) {
             if (request.isForMainFrame) {
-                val safeUrl = serverUrl.htmlEncode()
-                view.loadData(
+                // C2: Escape single quotes to prevent XSS breakout from JS onclick handler
+                // M4: Add viewport meta tag for proper scaling on high-DPI devices
+                val safeUrl = serverUrl
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\"", "&quot;")
+                    .replace("'", "&#39;")
+                view.loadDataWithBaseURL(
+                    serverUrl,
                     """
-                    <html><body style="display:flex;justify-content:center;align-items:center;
+                    <html><head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    </head><body style="display:flex;justify-content:center;align-items:center;
                     height:100vh;margin:0;font-family:sans-serif;background:#1a1a2e;color:#e0e0e0">
                     <div style="text-align:center;padding:20px">
                         <h2>No Connection</h2>
@@ -196,7 +215,8 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                     </div></body></html>
                     """.trimIndent(),
                     "text/html",
-                    "UTF-8"
+                    "UTF-8",
+                    null
                 )
             }
         }
@@ -220,8 +240,15 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         if (::webView.isInitialized) webView.saveState(outState)
     }
 
+    // M1: Pause/resume WebView to stop JS timers when backgrounded
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) webView.onResume()
+    }
+
     override fun onPause() {
         super.onPause()
+        if (::webView.isInitialized) webView.onPause()
         CookieManager.getInstance().flush()
     }
 

@@ -21,14 +21,12 @@
         <activity
             android:name=".SetupActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Trek" />
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize|keyboardHidden"
             android:label="@string/app_name"
             android:theme="@style/Theme.Trek">
             <intent-filter>

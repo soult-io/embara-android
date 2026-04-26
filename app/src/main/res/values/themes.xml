@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Trek" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <!-- M8: Explicitly dark-only theme (not DayNight) since Trek's web UI is dark -->
+    <style name="Theme.Trek" parent="Theme.MaterialComponents.NoActionBar">
         <item name="colorPrimary">#FF4A90D9</item>
         <item name="colorPrimaryVariant">#FF3A7BC0</item>
         <item name="colorOnPrimary">#FFE0E0E0</item>
@@ -12,11 +13,12 @@
         <item name="android:windowBackground">#FF1A1A2E</item>
     </style>
 
+    <!-- M7: Improved contrast — lighter blue (#6AB0FF) on dark bg passes WCAG AA -->
     <style name="Theme.Trek.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
         <item name="android:background">#FF222240</item>
         <item name="android:textColorPrimary">#FFE0E0E0</item>
         <item name="android:textColorSecondary">#80E0E0E0</item>
-        <item name="colorAccent">#FF4A90D9</item>
+        <item name="colorAccent">#FF6AB0FF</item>
     </style>
 
     <style name="Theme.Trek.BottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">

@@ -9,11 +9,14 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.concurrent.thread
+import java.net.URI
 
 class SetupActivity : AppCompatActivity() {
 
@@ -33,7 +36,6 @@ class SetupActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.progress_bar)
         errorText = findViewById(R.id.error_text)
 
-        // Pre-fill if returning from settings to change URL
         TrekPrefs.getServerUrl(this)?.let { url ->
             urlInput.setText(url)
         }
@@ -64,30 +66,36 @@ class SetupActivity : AppCompatActivity() {
         setLoading(true)
         clearError()
 
-        thread {
-            val result = validateUrl(url)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                setLoading(false)
-                if (result == null) {
-                    TrekPrefs.setServerUrl(this, url)
-                    startActivity(Intent(this, MainActivity::class.java).apply {
+        // H3: Use lifecycleScope — auto-cancels on Activity destruction, no thread leak
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { validateUrl(url) }
+            setLoading(false)
+            when (result) {
+                is ValidationResult.Success -> {
+                    TrekPrefs.setServerUrl(this@SetupActivity, url)
+                    startActivity(Intent(this@SetupActivity, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     })
                     finish()
-                } else {
-                    showError(result)
                 }
+                is ValidationResult.Error -> showError(result.message)
             }
         }
     }
 
-    private fun validateUrl(url: String): String? {
+    // H4: Return sealed class from background, map to strings on UI thread
+    private sealed class ValidationResult {
+        data object Success : ValidationResult()
+        data class Error(val message: String) : ValidationResult()
+    }
+
+    private fun validateUrl(url: String): ValidationResult {
         if (!UrlValidator.isValidScheme(url)) {
-            return getString(R.string.setup_error_scheme)
+            return ValidationResult.Error(getString(R.string.setup_error_scheme))
         }
         return try {
-            val connection = URL(url).openConnection() as HttpURLConnection
+            // C3: Use URI instead of deprecated java.net.URL constructor
+            val connection = URI.create(url).toURL().openConnection() as HttpURLConnection
             connection.apply {
                 requestMethod = "GET"
                 connectTimeout = 10_000
@@ -97,20 +105,20 @@ class SetupActivity : AppCompatActivity() {
             val code = connection.responseCode
             connection.disconnect()
             if (code in 200..399) {
-                null // success
+                ValidationResult.Success
             } else {
-                getString(R.string.setup_error_status, code)
+                ValidationResult.Error(getString(R.string.setup_error_status, code))
             }
-        } catch (e: java.net.UnknownHostException) {
-            getString(R.string.setup_error_dns)
-        } catch (e: java.net.ConnectException) {
-            getString(R.string.setup_error_refused)
-        } catch (e: javax.net.ssl.SSLException) {
-            getString(R.string.setup_error_ssl)
-        } catch (e: java.net.SocketTimeoutException) {
-            getString(R.string.setup_error_timeout)
+        } catch (_: java.net.UnknownHostException) {
+            ValidationResult.Error(getString(R.string.setup_error_dns))
+        } catch (_: java.net.ConnectException) {
+            ValidationResult.Error(getString(R.string.setup_error_refused))
+        } catch (_: javax.net.ssl.SSLException) {
+            ValidationResult.Error(getString(R.string.setup_error_ssl))
+        } catch (_: java.net.SocketTimeoutException) {
+            ValidationResult.Error(getString(R.string.setup_error_timeout))
         } catch (e: Exception) {
-            getString(R.string.setup_error_generic, e.localizedMessage ?: e.javaClass.simpleName)
+            ValidationResult.Error(getString(R.string.setup_error_generic, e.localizedMessage ?: e.javaClass.simpleName))
         }
     }
 

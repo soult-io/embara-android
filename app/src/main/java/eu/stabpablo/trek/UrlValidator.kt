@@ -2,24 +2,22 @@ package eu.stabpablo.trek
 
 import android.net.Uri
 
-/**
- * URL validation and normalization for TREK server connections.
- * Extracted from SetupActivity for testability.
- */
 object UrlValidator {
 
+    // M5: Case-insensitive scheme matching
     fun normalize(input: String): String {
         val trimmed = input.trim().trimEnd('/')
+        val lower = trimmed.lowercase()
         return when {
-            trimmed.startsWith("https://") -> trimmed
-            trimmed.startsWith("http://") -> trimmed
+            lower.startsWith("https://") -> trimmed
+            lower.startsWith("http://") -> trimmed
             else -> "https://$trimmed"
         }
     }
 
     fun isValidScheme(url: String): Boolean {
-        val uri = Uri.parse(url)
-        return uri.scheme == "https" || uri.scheme == "http"
+        val scheme = Uri.parse(url).scheme?.lowercase()
+        return scheme == "https" || scheme == "http"
     }
 
     fun isEmpty(input: String?): Boolean =
