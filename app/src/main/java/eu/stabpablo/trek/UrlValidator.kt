@@ -22,4 +22,11 @@ object UrlValidator {
 
     fun isEmpty(input: String?): Boolean =
         input.isNullOrBlank()
+
+    fun sanitizeForHtml(url: String): String =
+        url.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;")
 }

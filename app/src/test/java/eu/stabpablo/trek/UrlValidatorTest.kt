@@ -70,4 +70,45 @@ class UrlValidatorTest {
     fun `isEmpty returns false for valid input`() {
         assertFalse(UrlValidator.isEmpty("trek.example.com"))
     }
+
+    // -- normalize edge cases --
+
+    @Test
+    fun `normalize preserves original case when scheme is uppercase`() {
+        assertEquals("HTTPS://trek.example.com", UrlValidator.normalize("HTTPS://trek.example.com"))
+    }
+
+    @Test
+    fun `normalize strips trailing slash but preserves path`() {
+        assertEquals("https://trek.example.com/app", UrlValidator.normalize("https://trek.example.com/app/"))
+    }
+
+    // -- sanitizeForHtml --
+
+    @Test
+    fun `sanitizeForHtml escapes ampersand`() {
+        assertEquals("a&amp;b", UrlValidator.sanitizeForHtml("a&b"))
+    }
+
+    @Test
+    fun `sanitizeForHtml escapes angle brackets`() {
+        assertEquals("&lt;script&gt;", UrlValidator.sanitizeForHtml("<script>"))
+    }
+
+    @Test
+    fun `sanitizeForHtml escapes double quotes`() {
+        assertEquals("a&quot;b", UrlValidator.sanitizeForHtml("a\"b"))
+    }
+
+    @Test
+    fun `sanitizeForHtml escapes single quotes`() {
+        assertEquals("a&#39;b", UrlValidator.sanitizeForHtml("a'b"))
+    }
+
+    @Test
+    fun `sanitizeForHtml handles XSS attempt`() {
+        val malicious = "https://evil.com/x';alert(1)//"
+        val safe = UrlValidator.sanitizeForHtml(malicious)
+        assertFalse(safe.contains("'"))
+    }
 }

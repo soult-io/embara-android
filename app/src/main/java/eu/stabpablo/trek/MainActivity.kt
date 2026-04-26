@@ -214,7 +214,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     override fun onClearCache() {
         android.webkit.WebStorage.getInstance().deleteAllData()
         CookieManager.getInstance().removeAllCookies(null)
-        webView.loadUrl(serverUrl)
+        if (::webView.isInitialized) webView.loadUrl(serverUrl)
     }
 
     private fun createWebViewClient(): WebViewClient = object : WebViewClient() {
@@ -253,12 +253,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 isShowingErrorPage = true
                 dismissRefreshSpinner()
 
-                val safeUrl = serverUrl
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    .replace("\"", "&quot;")
-                    .replace("'", "&#39;")
+                val safeUrl = UrlValidator.sanitizeForHtml(serverUrl)
                 view.loadDataWithBaseURL(
                     serverUrl,
                     """
