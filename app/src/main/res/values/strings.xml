@@ -28,6 +28,5 @@
     <string name="settings_clear_cache_confirm">This will clear all cached data and cookies. You may need to log in again.</string>
     <string name="settings_clear">Clear</string>
     <string name="settings_about">About</string>
-
-    <!-- Colors referenced as string resources aren't needed — using inline hex -->
+    <string name="settings_about_version">Trek for Android v%1$s</string>
 </resources>

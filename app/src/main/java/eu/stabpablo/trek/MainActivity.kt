@@ -3,8 +3,8 @@ package eu.stabpablo.trek
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
-import androidx.core.text.htmlEncode
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -13,37 +13,24 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import android.widget.ImageButton
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
+import androidx.core.graphics.Insets
+import androidx.core.text.htmlEncode
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
     private lateinit var webView: WebView
     private var serverUrl: String = ""
 
-    private val settingsLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == SettingsActivity.RESULT_URL_CHANGED) {
-            // URL was changed — redirect to setup
-            startActivity(Intent(this, SetupActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            })
-            finish()
-        } else if (result.resultCode == SettingsActivity.RESULT_CACHE_CLEARED) {
-            webView.reload()
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Redirect to setup if no server URL configured
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         serverUrl = TrekPrefs.getServerUrl(this) ?: run {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
@@ -77,16 +64,21 @@ class MainActivity : AppCompatActivity() {
 
         CookieManager.getInstance().setAcceptCookie(true)
 
-        val settingsButton = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_settings)
-            setColorFilter(ContextCompat.getColor(context, R.color.settings_icon_tint))
-            background = ContextCompat.getDrawable(context, R.drawable.settings_button_bg)
-            contentDescription = getString(R.string.settings)
-            alpha = 0.6f
+        val density = resources.displayMetrics.density
+        val handleWidth = (32 * density).toInt()
+        val handleHeight = (4 * density).toInt()
+        val handleMargin = (8 * density).toInt()
+        val handleRadius = (2 * density)
 
-            setOnClickListener {
-                settingsLauncher.launch(Intent(this@MainActivity, SettingsActivity::class.java))
+        val handleBar = View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0x66E0E0E0.toInt())
+                cornerRadius = handleRadius
             }
+            contentDescription = getString(R.string.settings)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showSettings() }
         }
 
         return FrameLayout(this).apply {
@@ -95,25 +87,63 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
 
-            val buttonSize = (48 * resources.displayMetrics.density).toInt()
-            val margin = (8 * resources.displayMetrics.density).toInt()
-
-            addView(settingsButton, FrameLayout.LayoutParams(buttonSize, buttonSize).apply {
-                gravity = Gravity.TOP or Gravity.END
-                topMargin = margin
-                marginEnd = margin
+            addView(handleBar, FrameLayout.LayoutParams(handleWidth, handleHeight).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = handleMargin
             })
 
-            // Adjust settings button for system bars (status bar)
-            ViewCompat.setOnApplyWindowInsetsListener(settingsButton) { view, insets ->
-                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-                val params = view.layoutParams as FrameLayout.LayoutParams
-                params.topMargin = systemBars.top + margin
-                params.marginEnd = systemBars.right + margin
-                view.layoutParams = params
-                insets
+            // Apply system bar insets to root layout — prevents content behind status/nav bars
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
+                val types = WindowInsetsCompat.Type.systemBars() or
+                        WindowInsetsCompat.Type.displayCutout()
+                val insets = windowInsets.getInsets(types)
+
+                view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+
+                // Zero out handled insets so WebView doesn't double-apply via CSS safe-area
+                WindowInsetsCompat.Builder(windowInsets)
+                    .setInsets(types, Insets.NONE)
+                    .build()
             }
         }
+    }
+
+    private fun showSettings() {
+        val sheet = SettingsBottomSheet.newInstance(
+            serverUrl = serverUrl,
+            appVersion = getAppVersion()
+        )
+        sheet.show(supportFragmentManager, SettingsBottomSheet.TAG)
+    }
+
+    private fun getAppVersion(): String = try {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            packageManager.getPackageInfo(
+                packageName,
+                android.content.pm.PackageManager.PackageInfoFlags.of(0)
+            ).versionName ?: "unknown"
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+        }
+    } catch (_: Exception) {
+        "unknown"
+    }
+
+    // SettingsBottomSheet.Listener callbacks
+
+    override fun onChangeServer() {
+        TrekPrefs.clearServerUrl(this)
+        startActivity(Intent(this, SetupActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        })
+        finish()
+    }
+
+    override fun onClearCache() {
+        android.webkit.WebStorage.getInstance().deleteAllData()
+        CookieManager.getInstance().removeAllCookies(null)
+        webView.reload()
     }
 
     private fun createWebViewClient(): WebViewClient = object : WebViewClient() {

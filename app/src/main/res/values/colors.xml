@@ -4,5 +4,5 @@
     <color name="trek_accent">#FF4A90D9</color>
     <color name="trek_text">#FFE0E0E0</color>
     <color name="trek_text_secondary">#80E0E0E0</color>
-    <color name="settings_icon_tint">#E0E0E0</color>
+    <color name="handle_bar">#66E0E0E0</color>
 </resources>

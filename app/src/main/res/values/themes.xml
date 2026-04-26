@@ -7,8 +7,8 @@
         <item name="colorSecondary">#FF4A90D9</item>
         <item name="colorSecondaryVariant">#FF3A7BC0</item>
         <item name="colorOnSecondary">#FFE0E0E0</item>
-        <item name="android:statusBarColor">#FF1A1A2E</item>
-        <item name="android:navigationBarColor">#FF1A1A2E</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">#FF1A1A2E</item>
     </style>
 
@@ -17,5 +17,23 @@
         <item name="android:textColorPrimary">#FFE0E0E0</item>
         <item name="android:textColorSecondary">#80E0E0E0</item>
         <item name="colorAccent">#FF4A90D9</item>
+    </style>
+
+    <style name="Theme.Trek.BottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Trek.BottomSheet.Style</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimAmount">0.5</item>
+    </style>
+
+    <style name="Trek.BottomSheet.Style" parent="Widget.MaterialComponents.BottomSheet.Modal">
+        <item name="backgroundTint">#FF1A1A2E</item>
+        <item name="shapeAppearanceOverlay">@style/Trek.BottomSheet.Shape</item>
+    </style>
+
+    <style name="Trek.BottomSheet.Shape" parent="">
+        <item name="cornerSizeTopLeft">16dp</item>
+        <item name="cornerSizeTopRight">16dp</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
     </style>
 </resources>

@@ -37,11 +37,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Trek" />
-
     </application>
 
 </manifest>
