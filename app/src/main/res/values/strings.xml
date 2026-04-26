@@ -29,4 +29,5 @@
     <string name="settings_clear">Clear</string>
     <string name="settings_about">About</string>
     <string name="settings_about_version">Trek for Android v%1$s</string>
+    <string name="pull_to_refresh">Pull down to refresh page</string>
 </resources>
