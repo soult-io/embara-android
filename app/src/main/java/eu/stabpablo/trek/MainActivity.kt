@@ -167,7 +167,9 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     }
 
     private fun cancelRefreshTimeout() {
-        swipeRefresh.handler?.removeCallbacks(refreshTimeout)
+        if (::swipeRefresh.isInitialized) {
+            swipeRefresh.handler?.removeCallbacks(refreshTimeout)
+        }
     }
 
     private fun dismissRefreshSpinner() {
