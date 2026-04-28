@@ -17,7 +17,7 @@ object UrlValidator {
 
     fun isValidScheme(url: String): Boolean {
         val scheme = Uri.parse(url).scheme?.lowercase()
-        return scheme == "https" || scheme == "http"
+        return scheme == "https"
     }
 
     fun isEmpty(input: String?): Boolean =

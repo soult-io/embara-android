@@ -96,18 +96,21 @@ class SetupActivity : AppCompatActivity() {
         return try {
             // C3: Use URI instead of deprecated java.net.URL constructor
             val connection = URI.create(url).toURL().openConnection() as HttpURLConnection
-            connection.apply {
-                requestMethod = "GET"
-                connectTimeout = 10_000
-                readTimeout = 10_000
-                instanceFollowRedirects = true
-            }
-            val code = connection.responseCode
-            connection.disconnect()
-            if (code in 200..399) {
-                ValidationResult.Success
-            } else {
-                ValidationResult.Error(getString(R.string.setup_error_status, code))
+            try {
+                connection.apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    instanceFollowRedirects = true
+                }
+                val code = connection.responseCode
+                if (code in 200..399) {
+                    ValidationResult.Success
+                } else {
+                    ValidationResult.Error(getString(R.string.setup_error_status, code))
+                }
+            } finally {
+                connection.disconnect()
             }
         } catch (_: java.net.UnknownHostException) {
             ValidationResult.Error(getString(R.string.setup_error_dns))

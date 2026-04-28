@@ -12,7 +12,7 @@
     <string name="setup_error_refused">Connection refused — is the server running?</string>
     <string name="setup_error_ssl">SSL error — check your server\'s certificate</string>
     <string name="setup_error_timeout">Connection timed out</string>
-    <string name="setup_error_scheme">Only https:// and http:// URLs are supported</string>
+    <string name="setup_error_scheme">Only https:// URLs are supported</string>
     <string name="setup_error_generic">Connection failed: %1$s</string>
 
     <!-- Settings -->

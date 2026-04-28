@@ -2,6 +2,7 @@ package io.soult.embara
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
 import android.view.Gravity
@@ -29,6 +30,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private var serverUrl: String = ""
+    private var serverHost: String = ""
     private var isShowingErrorPage = false
 
     // Timeout failsafe: dismiss spinner if page never finishes loading
@@ -48,6 +50,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             finish()
             return
         }
+        serverHost = Uri.parse(serverUrl).host?.lowercase().orEmpty()
 
         isShowingErrorPage = savedInstanceState?.getBoolean(KEY_ERROR_PAGE, false) ?: false
 
@@ -223,11 +226,14 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             request: WebResourceRequest
         ): Boolean {
             val uri = request.url
-            val url = uri.toString()
-            return if (url.startsWith(serverUrl)) {
+            val host = uri.host?.lowercase().orEmpty()
+            val scheme = uri.scheme?.lowercase()
+            val isInternal = (scheme == "https" || scheme == "http") &&
+                (host == serverHost || host.endsWith(".$serverHost"))
+            return if (isInternal) {
                 false
             } else {
-                if (uri.scheme == "http" || uri.scheme == "https") {
+                if (scheme == "http" || scheme == "https") {
                     startActivity(Intent(Intent.ACTION_VIEW, uri))
                 }
                 true
@@ -239,7 +245,8 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             if (view.progress >= 100) {
                 dismissRefreshSpinner()
             }
-            if (url != null && url.startsWith(serverUrl) && !url.startsWith("data:")) {
+            val pageHost = if (url != null) Uri.parse(url).host?.lowercase().orEmpty() else ""
+            if (url != null && (pageHost == serverHost || pageHost.endsWith(".$serverHost")) && !url.startsWith("data:")) {
                 isShowingErrorPage = false
             }
         }
@@ -255,7 +262,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
                 val safeUrl = UrlValidator.sanitizeForHtml(serverUrl)
                 view.loadDataWithBaseURL(
-                    serverUrl,
+                    null,
                     """
                     <html><head>
                     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -295,7 +302,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;")
             view.loadDataWithBaseURL(
-                serverUrl,
+                null,
                 """
                 <html><head>
                 <meta name="viewport" content="width=device-width, initial-scale=1">

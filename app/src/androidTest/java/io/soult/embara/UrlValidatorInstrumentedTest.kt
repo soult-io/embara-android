@@ -18,8 +18,8 @@ class UrlValidatorInstrumentedTest {
     }
 
     @Test
-    fun isValidScheme_acceptsHttp() {
-        assertTrue(UrlValidator.isValidScheme("http://192.168.1.100:3000"))
+    fun isValidScheme_rejectsHttp() {
+        assertFalse(UrlValidator.isValidScheme("http://192.168.1.100:3000"))
     }
 
     @Test

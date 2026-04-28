@@ -22,7 +22,9 @@ A thin WebView wrapper that lets you use your self-hosted TREK trip planner as a
 ## Requirements
 
 - Android 8.0+ (API 26)
-- A running TREK instance accessible from your phone
+- A running TREK instance accessible from your phone over **HTTPS**
+
+> **Note:** Embara requires your TREK server to use HTTPS. Plain HTTP connections are not supported. If you're self-hosting on a local network, set up a reverse proxy with a TLS certificate (e.g., Caddy, nginx + Let's Encrypt, or a self-signed cert).
 
 ## Install
 
