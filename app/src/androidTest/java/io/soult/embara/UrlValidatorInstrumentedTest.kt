@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertFalse

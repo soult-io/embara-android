@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -43,7 +43,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        serverUrl = TrekPrefs.getServerUrl(this) ?: run {
+        serverUrl = EmbaraPrefs.getServerUrl(this) ?: run {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
@@ -107,8 +107,8 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 }
             }
 
-            setColorSchemeColors(ContextCompat.getColor(this@MainActivity, R.color.trek_accent))
-            setProgressBackgroundColorSchemeColor(ContextCompat.getColor(this@MainActivity, R.color.trek_bg))
+            setColorSchemeColors(ContextCompat.getColor(this@MainActivity, R.color.embara_accent))
+            setProgressBackgroundColorSchemeColor(ContextCompat.getColor(this@MainActivity, R.color.embara_bg))
             contentDescription = getString(R.string.pull_to_refresh)
         }
 
@@ -204,7 +204,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     }
 
     override fun onChangeServer() {
-        TrekPrefs.clearServerUrl(this)
+        EmbaraPrefs.clearServerUrl(this)
         startActivity(Intent(this, SetupActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         })
@@ -263,7 +263,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                     height:100vh;margin:0;font-family:sans-serif;background:#1a1a2e;color:#e0e0e0">
                     <div style="text-align:center;padding:20px">
                         <h2>No Connection</h2>
-                        <p>Can't reach your Trek server.</p>
+                        <p>Can't reach your TREK server.</p>
                         <p style="font-size:13px;opacity:0.6">$safeUrl</p>
                         <button onclick="location.href='$safeUrl'"
                             style="margin-top:16px;padding:12px 24px;border:none;border-radius:8px;
@@ -303,7 +303,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 height:100vh;margin:0;font-family:sans-serif;background:#1a1a2e;color:#e0e0e0">
                 <div style="text-align:center;padding:20px">
                     <h2>SSL Error</h2>
-                    <p>Can't establish a secure connection to your Trek server.</p>
+                    <p>Can't establish a secure connection to your TREK server.</p>
                     <p style="font-size:13px;opacity:0.6">$safeUrl</p>
                     <p style="font-size:13px;opacity:0.6">Check the server's SSL certificate.</p>
                     <button onclick="location.href='$safeUrl'"

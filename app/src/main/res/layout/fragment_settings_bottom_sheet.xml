@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="@color/trek_bg"
+    android:background="@color/embara_bg"
     android:paddingBottom="16dp">
 
     <!-- Drag handle -->
@@ -34,14 +34,14 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_server"
             android:textSize="16sp"
-            android:textColor="@color/trek_text" />
+            android:textColor="@color/embara_text" />
 
         <TextView
             android:id="@+id/sheet_current_url"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="13sp"
-            android:textColor="@color/trek_text_secondary"
+            android:textColor="@color/embara_text_secondary"
             android:paddingTop="2dp" />
 
     </LinearLayout>
@@ -71,14 +71,14 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_clear_cache_title"
             android:textSize="16sp"
-            android:textColor="@color/trek_text" />
+            android:textColor="@color/embara_text" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/settings_clear_cache_desc"
             android:textSize="13sp"
-            android:textColor="@color/trek_text_secondary"
+            android:textColor="@color/embara_text_secondary"
             android:paddingTop="2dp" />
 
     </LinearLayout>
@@ -103,14 +103,14 @@
             android:layout_height="wrap_content"
             android:text="@string/settings_about"
             android:textSize="16sp"
-            android:textColor="@color/trek_text" />
+            android:textColor="@color/embara_text" />
 
         <TextView
             android:id="@+id/sheet_version_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="13sp"
-            android:textColor="@color/trek_text_secondary"
+            android:textColor="@color/embara_text_secondary"
             android:paddingTop="2dp" />
 
     </LinearLayout>

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="trek_bg">#FF1A1A2E</color>
-    <color name="trek_accent">#FF4A90D9</color>
-    <color name="trek_text">#FFE0E0E0</color>
-    <color name="trek_text_secondary">#80E0E0E0</color>
+    <color name="embara_bg">#FF1A1A2E</color>
+    <color name="embara_accent">#FF4A90D9</color>
+    <color name="embara_text">#FFE0E0E0</color>
+    <color name="embara_text_secondary">#80E0E0E0</color>
     <color name="handle_bar">#66E0E0E0</color>
-    <color name="trek_error">#FFEF5350</color>
+    <color name="embara_error">#FFEF5350</color>
 </resources>

@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

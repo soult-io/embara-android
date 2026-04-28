@@ -12,7 +12,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Trek">
+        android:theme="@style/Theme.Embara">
 
         <meta-data
             android:name="android.webkit.WebView.MetricsOptOut"
@@ -22,13 +22,13 @@
             android:name=".SetupActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.Trek" />
+            android:theme="@style/Theme.Embara" />
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Trek">
+            android:theme="@style/Theme.Embara">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

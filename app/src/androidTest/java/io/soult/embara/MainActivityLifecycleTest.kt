@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
@@ -22,12 +22,12 @@ class MainActivityLifecycleTest {
 
     @Before
     fun setup() {
-        TrekPrefs.setServerUrl(context, testUrl)
+        EmbaraPrefs.setServerUrl(context, testUrl)
     }
 
     @After
     fun cleanup() {
-        TrekPrefs.clearServerUrl(context)
+        EmbaraPrefs.clearServerUrl(context)
     }
 
     @Test
@@ -65,7 +65,7 @@ class MainActivityLifecycleTest {
     fun mainActivity_noUrl_saveInstanceState_doesNotCrash() {
         // Process death during redirect: onCreate returns early, but system may
         // trigger onSaveInstanceState before onDestroy
-        TrekPrefs.clearServerUrl(context)
+        EmbaraPrefs.clearServerUrl(context)
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         scenario.close()
     }

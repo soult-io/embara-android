@@ -1,9 +1,9 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import android.content.Context
 import android.content.SharedPreferences
 
-object TrekPrefs {
+object EmbaraPrefs {
 
     private const val PREFS_NAME = "trek_prefs"
     private const val KEY_SERVER_URL = "server_url"

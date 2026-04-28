@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- M8: Explicitly dark-only theme (not DayNight) since Trek's web UI is dark -->
-    <style name="Theme.Trek" parent="Theme.MaterialComponents.NoActionBar">
+    <!-- M8: Explicitly dark-only theme (not DayNight) since TREK's web UI is dark -->
+    <style name="Theme.Embara" parent="Theme.MaterialComponents.NoActionBar">
         <item name="colorPrimary">#FF4A90D9</item>
         <item name="colorPrimaryVariant">#FF3A7BC0</item>
         <item name="colorOnPrimary">#FFE0E0E0</item>
@@ -14,25 +14,25 @@
     </style>
 
     <!-- M7: Improved contrast — lighter blue (#6AB0FF) on dark bg passes WCAG AA -->
-    <style name="Theme.Trek.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+    <style name="Theme.Embara.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
         <item name="android:background">#FF222240</item>
         <item name="android:textColorPrimary">#FFE0E0E0</item>
         <item name="android:textColorSecondary">#80E0E0E0</item>
         <item name="colorAccent">#FF6AB0FF</item>
     </style>
 
-    <style name="Theme.Trek.BottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
-        <item name="bottomSheetStyle">@style/Trek.BottomSheet.Style</item>
+    <style name="Theme.Embara.BottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Embara.BottomSheet.Style</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:backgroundDimAmount">0.5</item>
     </style>
 
-    <style name="Trek.BottomSheet.Style" parent="Widget.MaterialComponents.BottomSheet.Modal">
+    <style name="Embara.BottomSheet.Style" parent="Widget.MaterialComponents.BottomSheet.Modal">
         <item name="backgroundTint">#FF1A1A2E</item>
-        <item name="shapeAppearanceOverlay">@style/Trek.BottomSheet.Shape</item>
+        <item name="shapeAppearanceOverlay">@style/Embara.BottomSheet.Shape</item>
     </style>
 
-    <style name="Trek.BottomSheet.Shape" parent="">
+    <style name="Embara.BottomSheet.Shape" parent="">
         <item name="cornerSizeTopLeft">16dp</item>
         <item name="cornerSizeTopRight">16dp</item>
         <item name="cornerSizeBottomLeft">0dp</item>

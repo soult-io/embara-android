@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Trek"
+rootProject.name = "Embara"
 include(":app")

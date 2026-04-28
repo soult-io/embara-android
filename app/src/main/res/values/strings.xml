@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Trek</string>
+    <string name="app_name">Embara</string>
 
     <!-- Setup -->
     <string name="setup_subtitle">Connect to your server</string>
     <string name="setup_url_hint">Server URL</string>
     <string name="setup_connect">Connect</string>
-    <string name="setup_error_empty">Enter your Trek server URL</string>
+    <string name="setup_error_empty">Enter your TREK server URL</string>
     <string name="setup_error_status">Server returned HTTP %1$d</string>
     <string name="setup_error_dns">Server not found — check the URL</string>
     <string name="setup_error_refused">Connection refused — is the server running?</string>
@@ -28,6 +28,6 @@
     <string name="settings_clear_cache_confirm">This will clear all cached data and cookies. You may need to log in again.</string>
     <string name="settings_clear">Clear</string>
     <string name="settings_about">About</string>
-    <string name="settings_about_version">Trek for Android v%1$s</string>
+    <string name="settings_about_version">Embara for Android v%1$s</string>
     <string name="pull_to_refresh">Pull down to refresh page</string>
 </resources>

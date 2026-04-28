@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import android.content.Context
 import android.os.Bundle
@@ -29,7 +29,7 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
         listener = null
     }
 
-    override fun getTheme(): Int = R.style.Theme_Trek_BottomSheet
+    override fun getTheme(): Int = R.style.Theme_Embara_BottomSheet
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -56,7 +56,7 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun confirmChangeServer() {
-        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Trek_Dialog)
+        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Embara_Dialog)
             .setTitle(R.string.settings_change_server_title)
             .setMessage(R.string.settings_change_server_confirm)
             .setPositiveButton(R.string.settings_change) { _, _ ->
@@ -68,7 +68,7 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun confirmClearCache() {
-        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Trek_Dialog)
+        MaterialAlertDialogBuilder(requireContext(), R.style.Theme_Embara_Dialog)
             .setTitle(R.string.settings_clear_cache_title)
             .setMessage(R.string.settings_clear_cache_confirm)
             .setPositiveButton(R.string.settings_clear) { _, _ ->

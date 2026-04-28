@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "eu.stabpablo.trek"
+    namespace = "io.soult.embara"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -11,7 +11,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "eu.stabpablo.trek"
+        applicationId = "io.soult.embara"
         minSdk = 26
         targetSdk = 36
         versionCode = 2

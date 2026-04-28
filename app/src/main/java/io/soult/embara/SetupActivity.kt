@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import android.content.Intent
 import android.os.Bundle
@@ -36,7 +36,7 @@ class SetupActivity : AppCompatActivity() {
         progressBar = findViewById(R.id.progress_bar)
         errorText = findViewById(R.id.error_text)
 
-        TrekPrefs.getServerUrl(this)?.let { url ->
+        EmbaraPrefs.getServerUrl(this)?.let { url ->
             urlInput.setText(url)
         }
 
@@ -72,7 +72,7 @@ class SetupActivity : AppCompatActivity() {
             setLoading(false)
             when (result) {
                 is ValidationResult.Success -> {
-                    TrekPrefs.setServerUrl(this@SetupActivity, url)
+                    EmbaraPrefs.setServerUrl(this@SetupActivity, url)
                     startActivity(Intent(this@SetupActivity, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     })

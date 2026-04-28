@@ -1,4 +1,4 @@
-package eu.stabpablo.trek
+package io.soult.embara
 
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,12 +20,12 @@ class MainActivityNoUrlTest {
 
     @Before
     fun clearServerUrl() {
-        TrekPrefs.clearServerUrl(context)
+        EmbaraPrefs.clearServerUrl(context)
     }
 
     @After
     fun cleanup() {
-        TrekPrefs.clearServerUrl(context)
+        EmbaraPrefs.clearServerUrl(context)
     }
 
     @Test
