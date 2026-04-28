@@ -76,10 +76,10 @@ jobs:
       - name: Build signed release APK
         run: ./gradlew assembleRelease
         env:
-          TREK_KEYSTORE_FILE: ${{ github.workspace }}/embara-release.jks
-          TREK_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          TREK_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          TREK_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          EMBARA_KEYSTORE_FILE: ${{ github.workspace }}/embara-release.jks
+          EMBARA_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          EMBARA_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          EMBARA_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Generate SHA-256 checksum
         run: |

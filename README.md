@@ -32,7 +32,7 @@ Download the latest APK from [Releases](https://github.com/soult-io/embara-andro
 
 ```bash
 git clone https://github.com/soult-io/embara-android.git
-cd trek-android
+cd embara-android
 ./gradlew assembleDebug
 ```
 

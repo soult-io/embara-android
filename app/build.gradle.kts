@@ -21,13 +21,13 @@ android {
     }
 
     signingConfigs {
-        val keystoreFile = System.getenv("TREK_KEYSTORE_FILE")
+        val keystoreFile = System.getenv("EMBARA_KEYSTORE_FILE")
         if (keystoreFile != null) {
             create("release") {
                 storeFile = file(keystoreFile)
-                storePassword = System.getenv("TREK_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("TREK_KEY_ALIAS")
-                keyPassword = System.getenv("TREK_KEY_PASSWORD")
+                storePassword = System.getenv("EMBARA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("EMBARA_KEY_ALIAS")
+                keyPassword = System.getenv("EMBARA_KEY_PASSWORD")
             }
         }
     }
@@ -40,7 +40,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val keystoreFile = System.getenv("TREK_KEYSTORE_FILE")
+            val keystoreFile = System.getenv("EMBARA_KEYSTORE_FILE")
             if (keystoreFile != null) {
                 signingConfig = signingConfigs.getByName("release")
             }

@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 
 object EmbaraPrefs {
 
-    private const val PREFS_NAME = "trek_prefs"
+    private const val PREFS_NAME = "embara_prefs"
     private const val KEY_SERVER_URL = "server_url"
 
     private fun prefs(context: Context): SharedPreferences =
