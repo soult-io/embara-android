@@ -26,12 +26,12 @@ A thin WebView wrapper that lets you use your self-hosted TREK trip planner as a
 
 ## Install
 
-Download the latest APK from [Releases](https://github.com/soult-io/trek-android/releases) and sideload it.
+Download the latest APK from [Releases](https://github.com/soult-io/embara-android/releases) and sideload it.
 
 ## Build from source
 
 ```bash
-git clone https://github.com/soult-io/trek-android.git
+git clone https://github.com/soult-io/embara-android.git
 cd trek-android
 ./gradlew assembleDebug
 ```
