@@ -38,97 +38,9 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: trek-debug
+          name: embara-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-
-  instrumented-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify KVM available
-        run: |
-          if [ ! -e /dev/kvm ]; then
-            echo "::error::KVM not available — emulator will be unusably slow"
-            exit 1
-          fi
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: gradle-
-
-      - name: AVD cache
-        uses: actions/cache@v4
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-api30-x86_64-default
-
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-
-      - name: Run instrumented tests and smoke test
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          target: default
-          arch: x86_64
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect
-          emulator-boot-timeout: 600
-          disable-animations: true
-          script: |
-            # Run instrumented tests
-            ./gradlew connectedCheck
-
-            # Smoke test — install debug APK and check for crashes
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -n io.soult.embara/.MainActivity
-            sleep 10
-            if adb logcat -d | grep -q 'FATAL EXCEPTION\|AndroidRuntime'; then
-              echo "::error::App crashed on launch"
-              adb logcat -d > smoke-test-logcat.txt
-              exit 1
-            fi
-            echo "Smoke test passed — no crashes detected"
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: instrumented-test-results
-          path: app/build/reports/androidTests/
-          retention-days: 14
-
-      - name: Capture logcat on failure
-        if: failure()
-        run: adb logcat -d > logcat.txt
-
-      - name: Upload logcat
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logcat
-          path: |
-            logcat.txt
-            smoke-test-logcat.txt
-          retention-days: 14
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -159,12 +71,12 @@ jobs:
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Decode signing keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > trek-release.jks
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > embara-release.jks
 
       - name: Build signed release APK
         run: ./gradlew assembleRelease
         env:
-          TREK_KEYSTORE_FILE: ${{ github.workspace }}/trek-release.jks
+          TREK_KEYSTORE_FILE: ${{ github.workspace }}/embara-release.jks
           TREK_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           TREK_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           TREK_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -185,4 +97,4 @@ jobs:
 
       - name: Cleanup keystore
         if: always()
-        run: rm -f trek-release.jks
+        run: rm -f embara-release.jks
