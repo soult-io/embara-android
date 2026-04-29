@@ -15,7 +15,9 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -70,7 +72,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun createLayout(): FrameLayout {
+    private fun createLayout(): LinearLayout {
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -113,44 +115,62 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             setColorSchemeColors(ContextCompat.getColor(this@MainActivity, R.color.embara_accent))
             setProgressBackgroundColorSchemeColor(ContextCompat.getColor(this@MainActivity, R.color.embara_bg))
             contentDescription = getString(R.string.pull_to_refresh)
+
+            // Disabled by default; enabled only on dashboard pages
+            isEnabled = false
         }
 
         val density = resources.displayMetrics.density
-        val touchTargetWidth = (80 * density).toInt()
-        val touchTargetHeight = (48 * density).toInt()
+        val bottomBarHeight = (40 * density).toInt()
 
-        val handleTouchTarget = FrameLayout(this).apply {
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.embara_bg))
             isClickable = true
             isFocusable = true
             contentDescription = getString(R.string.settings)
             setOnClickListener { showSettings() }
 
-            val barWidth = (40 * density).toInt()
-            val barHeight = (5 * density).toInt()
-            val barRadius = (3 * density)
+            val hPad = (12 * density).toInt()
+            setPadding(hPad, 0, hPad, 0)
 
-            val bar = View(this@MainActivity).apply {
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(0x99555555.toInt())
-                    cornerRadius = barRadius
-                }
-                elevation = 4 * density
+            val icon = ImageView(this@MainActivity).apply {
+                setImageResource(android.R.drawable.ic_menu_manage)
+                setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.embara_accent))
+                val iconSize = (20 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize)
             }
+            addView(icon)
 
-            addView(bar, FrameLayout.LayoutParams(barWidth, barHeight).apply {
-                gravity = Gravity.CENTER
-            })
+            val label = TextView(this@MainActivity).apply {
+                text = getString(R.string.settings)
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.embara_text))
+                textSize = 14f
+                val labelStart = (8 * density).toInt()
+                setPadding(labelStart, 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            addView(label)
+
+            val version = TextView(this@MainActivity).apply {
+                text = getString(R.string.settings_about_version, getAppVersion())
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.embara_text_secondary))
+                textSize = 11f
+            }
+            addView(version)
         }
 
-        return FrameLayout(this).apply {
-            addView(swipeRefresh, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+
+            addView(swipeRefresh, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
             ))
 
-            addView(handleTouchTarget, FrameLayout.LayoutParams(touchTargetWidth, touchTargetHeight).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            })
+            addView(bottomBar, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, bottomBarHeight
+            ))
 
             ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
                 val types = WindowInsetsCompat.Type.systemBars() or
@@ -162,6 +182,12 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                     .build()
             }
         }
+    }
+
+    private fun updateSwipeRefreshForUrl(url: String?) {
+        if (!::swipeRefresh.isInitialized) return
+        val path = url?.let { Uri.parse(it).path }?.trimEnd('/') ?: ""
+        swipeRefresh.isEnabled = path.isEmpty() || path == "/dashboard" || path.startsWith("/dashboard/")
     }
 
     private fun scheduleRefreshTimeout() {
@@ -249,6 +275,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             if (url != null && (pageHost == serverHost || pageHost.endsWith(".$serverHost")) && !url.startsWith("data:")) {
                 isShowingErrorPage = false
             }
+            updateSwipeRefreshForUrl(url)
         }
 
         override fun onReceivedError(
