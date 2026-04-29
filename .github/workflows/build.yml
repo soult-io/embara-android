@@ -8,7 +8,9 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  # Quick checks on PRs — runs on GitHub-hosted (safe for public repo forks)
+  check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -31,6 +33,17 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Run unit tests
+        run: ./gradlew test
+
+  # Full build on push to main — runs on self-hosted FRAME-DESK
+  build:
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, linux, android]
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Run tests and build APKs
         run: ./gradlew test assembleDebug assembleRelease
