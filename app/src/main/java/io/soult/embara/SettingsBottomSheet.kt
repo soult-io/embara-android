@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
@@ -52,6 +53,18 @@ class SettingsBottomSheet : BottomSheetDialogFragment() {
 
         view.findViewById<LinearLayout>(R.id.sheet_clear_cache).setOnClickListener {
             confirmClearCache()
+        }
+
+        // Expand fully so all sections are visible on landscape tablets
+        dialog?.setOnShowListener {
+            val bottomSheet = dialog?.findViewById<View>(
+                com.google.android.material.R.id.design_bottom_sheet
+            )
+            bottomSheet?.let {
+                val behavior = BottomSheetBehavior.from(it)
+                behavior.state = BottomSheetBehavior.STATE_EXPANDED
+                behavior.skipCollapsed = true
+            }
         }
     }
 
