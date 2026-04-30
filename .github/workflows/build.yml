@@ -48,11 +48,12 @@ jobs:
       - name: Run tests and build APKs
         run: ./gradlew test assembleDebug assembleRelease
 
-      - name: Copy APKs to /data/builds for MCP access
+      - name: Copy build outputs to /data/builds for MCP access
         run: |
           mkdir -p /data/builds
-          cp app/build/outputs/apk/debug/app-debug.apk /data/builds/embara-debug.apk
-          cp app/build/outputs/apk/release/app-release-unsigned.apk /data/builds/embara-release-unsigned.apk 2>/dev/null || true
+          cp app/build/outputs/apk/debug/app-debug.apk /data/builds/embara-debug.apk || echo "Debug APK not found, skipping"
+          cp app/build/outputs/apk/release/app-release-unsigned.apk /data/builds/embara-release-unsigned.apk || echo "Release APK not found, skipping"
+          cp app/build/outputs/bundle/release/app-release.aab /data/builds/embara-release.aab || echo "Release AAB not found, skipping"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
