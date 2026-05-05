@@ -12,7 +12,7 @@
     <ImageView
         android:layout_width="240dp"
         android:layout_height="57dp"
-        android:src="@drawable/logo_embara"
+        app:srcCompat="@drawable/logo_embara"
         android:contentDescription="@string/app_name"
         android:layout_marginBottom="8dp" />
 
