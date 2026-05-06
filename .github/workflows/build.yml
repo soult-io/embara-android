@@ -86,6 +86,51 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
+  # Instrumented tests on emulator — runs after build, does not block release
+  instrumented-tests:
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: [self-hosted, linux, android]
+
+    env:
+      ANDROID_HOME: /opt/android-sdk
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Check for connected emulator
+        id: emulator-check
+        run: |
+          SERIAL=$(adb devices | grep -E '^emulator-' | head -1 | awk '{print $1}')
+          if [ -z "$SERIAL" ]; then
+            echo "No emulator found — skipping instrumented tests"
+            echo "available=false" >> $GITHUB_OUTPUT
+          else
+            echo "Found emulator: $SERIAL"
+            echo "available=true" >> $GITHUB_OUTPUT
+            echo "serial=$SERIAL" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run instrumented tests
+        if: steps.emulator-check.outputs.available == 'true'
+        run: ./gradlew connectedDebugAndroidTest
+        continue-on-error: true
+
+      - name: Upload test results
+        if: always() && steps.emulator-check.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumented-test-results
+          path: app/build/reports/androidTests/
+          retention-days: 30
+          if-no-files-found: ignore
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
