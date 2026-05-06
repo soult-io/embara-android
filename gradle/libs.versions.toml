@@ -8,7 +8,7 @@ junitVersion = "1.2.1"
 espressoCore = "3.6.1"
 testCore = "1.6.1"
 lifecycleRuntimeKtx = "2.9.0"
-swiperefreshlayout = "1.1.0"
+swiperefreshlayout = "1.2.0"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
