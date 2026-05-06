@@ -6,7 +6,7 @@ coreKtx = "1.16.0"
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"
-testCore = "1.6.1"
+testCore = "1.7.0"
 lifecycleRuntimeKtx = "2.9.0"
 swiperefreshlayout = "1.1.0"
 
