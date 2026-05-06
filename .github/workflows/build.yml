@@ -34,8 +34,8 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      - name: Run unit tests
-        run: ./gradlew test
+      - name: Run lint and unit tests
+        run: ./gradlew lint test
 
   # Full build on push to main — runs on self-hosted FRAME-DESK
   build:
@@ -54,8 +54,8 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Run tests and build APKs
-        run: ./gradlew test assembleDebug assembleRelease bundleRelease
+      - name: Run lint, tests, and build APKs
+        run: ./gradlew lint test assembleDebug assembleRelease bundleRelease
 
       - name: Copy build outputs for MCP access
         run: |
@@ -85,6 +85,15 @@ jobs:
           path: app/build/outputs/bundle/release/app-release.aab
           retention-days: 90
           if-no-files-found: warn
+
+      - name: Upload lint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: app/build/reports/lint-results*.html
+          retention-days: 30
+          if-no-files-found: ignore
 
   # Instrumented tests on emulator — runs after build, does not block release
   instrumented-tests:
