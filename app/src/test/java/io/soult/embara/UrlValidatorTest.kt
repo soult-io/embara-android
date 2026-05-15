@@ -46,7 +46,7 @@ class UrlValidatorTest {
 
     @Test
     fun `normalize handles subdomain`() {
-        assertEquals("https://trek.stabpablo.eu", UrlValidator.normalize("trek.stabpablo.eu"))
+        assertEquals("https://trek.example.com", UrlValidator.normalize("trek.example.com"))
     }
 
     // -- isEmpty --
