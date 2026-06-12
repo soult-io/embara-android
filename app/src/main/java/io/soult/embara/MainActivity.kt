@@ -25,7 +25,14 @@ import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
@@ -34,6 +41,11 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     private var serverUrl: String = ""
     private var serverHost: String = ""
     private var isShowingErrorPage = false
+
+    // Periodic cookie flush while RESUMED. Persists the post-login trek_session cookie to
+    // disk within a couple seconds even with no navigation/onPause, defeating Chromium's
+    // ~30s lazy flush window. Cancelled in onPause.
+    private var cookieFlushJob: Job? = null
 
     // Timeout failsafe: dismiss spinner if page never finishes loading
     private val refreshTimeout = Runnable {
@@ -284,6 +296,11 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             super.doUpdateVisitedHistory(view, url, isReload)
+            // TREK login is an XHR, so onPageFinished does NOT fire after login. The SPA's
+            // client-side route change does trigger this callback, so flush here to persist
+            // the trek_session cookie to disk immediately rather than waiting ~30s for
+            // Chromium's lazy flush (which is lost if the process dies first).
+            CookieManager.getInstance().flush()
             updateSwipeRefreshForUrl(url)
         }
 
@@ -393,12 +410,28 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     override fun onResume() {
         super.onResume()
         if (::webView.isInitialized) webView.onResume()
+        startPeriodicCookieFlush()
     }
 
     override fun onPause() {
         super.onPause()
+        cookieFlushJob?.cancel()
+        cookieFlushJob = null
         if (::webView.isInitialized) webView.onPause()
         CookieManager.getInstance().flush()
+    }
+
+    private fun startPeriodicCookieFlush() {
+        cookieFlushJob?.cancel()
+        cookieFlushJob = lifecycleScope.launch {
+            while (isActive) {
+                delay(COOKIE_FLUSH_INTERVAL_MS)
+                // flush() does disk I/O — keep it off the main thread.
+                withContext(Dispatchers.IO) {
+                    CookieManager.getInstance().flush()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -410,5 +443,6 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     companion object {
         private const val KEY_ERROR_PAGE = "isShowingErrorPage"
         private const val REFRESH_TIMEOUT_MS = 15_000L
+        private const val COOKIE_FLUSH_INTERVAL_MS = 2_000L
     }
 }

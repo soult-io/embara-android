@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <exclude domain="sharedpref" path="embara_prefs.xml"/>
+    <!-- WebView data (Cookies SQLite + Local Storage) lives at the data-dir root in
+         app_webview/. Exclude it so auth state never round-trips through backup/restore
+         and can't clobber the live logged-in session (#2358). -->
+    <exclude domain="root" path="app_webview/"/>
 </full-backup-content>

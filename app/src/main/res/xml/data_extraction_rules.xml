@@ -2,8 +2,13 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="embara_prefs.xml"/>
+        <!-- WebView data (Cookies SQLite + Local Storage) lives at the data-dir root in
+             app_webview/. Exclude it so auth state never round-trips through backup/restore
+             and can't clobber the live logged-in session (#2358). -->
+        <exclude domain="root" path="app_webview/"/>
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="embara_prefs.xml"/>
+        <exclude domain="root" path="app_webview/"/>
     </device-transfer>
 </data-extraction-rules>
