@@ -8,7 +8,8 @@
         <exclude domain="root" path="app_webview/"/>
     </cloud-backup>
     <device-transfer>
+        <!-- Allowlist: only embara_prefs is transferred, so app_webview/ (auth/cookies)
+             is already excluded — an explicit <exclude> here is redundant and lint-invalid. -->
         <include domain="sharedpref" path="embara_prefs.xml"/>
-        <exclude domain="root" path="app_webview/"/>
     </device-transfer>
 </data-extraction-rules>
