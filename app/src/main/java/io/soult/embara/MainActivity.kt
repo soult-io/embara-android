@@ -267,6 +267,10 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            super.onPageFinished(view, url)
+            // Persist cookies to disk as soon as a navigation completes (e.g. right
+            // after login) so a hard process kill before onPause can't lose the session.
+            CookieManager.getInstance().flush()
             // Only dismiss when fully loaded (not on intermediate redirects)
             if (view.progress >= 100) {
                 dismissRefreshSpinner()
