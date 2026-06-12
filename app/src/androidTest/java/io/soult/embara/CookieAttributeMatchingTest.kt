@@ -185,7 +185,7 @@ class CookieAttributeMatchingTest {
     /**
      * 6. A path-scoped cookie (Path=/app) is returned inside its path subtree but NOT outside it.
      *
-     * Path scoping: a cookie with Path=/app is attached to /app and /app/* requests, but withheld
+     * Path scoping: a cookie with Path=/app is attached to /app and /app/(subpath) requests, but withheld
      * from /other. If TREK pins the auth cookie to a specific path and the WebView loads a URL
      * outside that path, the cookie is on disk but not sent — a path-mismatch root cause.
      */
