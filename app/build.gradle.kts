@@ -50,6 +50,21 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
+    // Gradle Managed Device for headless instrumented tests. aosp_atd (Automated Test Device) is
+    // test-keys/userdebug so it auto-authorizes adb headless. Task: :app:aospAtdDebugAndroidTest.
+    // (Local-only pipeline exercise — NOT committed to the embara remote without approval.)
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("aospAtd") {
+                    device = "Pixel 5"
+                    apiLevel = 35
+                    systemImageSource = "aosp-atd"
+                }
+            }
+        }
+    }
 }
 
 dependencies {
