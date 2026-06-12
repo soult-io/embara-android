@@ -175,37 +175,53 @@ class CookieFlushScenariosTest {
     }
 
     /**
-     * CRUX of the process-death gap. A resumed activity that is NEVER paused should not eagerly
-     * flush a freshly-seeded persistent cookie. We seed, launch, move to RESUMED only (no pause),
-     * and check disk PROMPTLY (~1s). We assert the cookie is NOT yet on disk: this documents that
-     * nothing flushes eagerly, so a process kill while resumed loses the cookie.
+     * CRUX of the process-death gap. With NO flush trigger whatsoever — no explicit
+     * CookieManager.flush(), no Activity lifecycle (onPause), and crucially NO page load — a
+     * freshly-set persistent cookie stays in WebView memory and does NOT reach the on-disk Chromium
+     * store. This is the core of the auth-persistence gap: if the process dies before any flush
+     * trigger fires, that cookie is lost and the user must re-login on cold start.
      *
-     * If the cookie IS already on disk, the build is exhibiting eager-flush behavior — the assert
-     * fails with a clear message recording that observation (which would actually be GOOD for
-     * auth persistence, but contradicts the documented gap and must be investigated).
+     * We deliberately do NOT launch MainActivity here. MainActivity loads its WebView page, and
+     * WebViewClient.onPageFinished now calls CookieManager.flush() — so launching it would eagerly
+     * flush the cookie and mask the gap. (The positive "page load flushes" behavior is covered
+     * separately by CookieFlushOnPageLoadTest.) Instead we exercise CookieManager directly: set the
+     * persistent cookie, do nothing else, and check disk PROMPTLY (~1s).
+     *
+     * Timing caveat: a background Chromium auto-flush timer could THEORETICALLY land within the
+     * window and put the cookie on disk; NO_FLUSH_WINDOW_MS is the knob — short enough that this is
+     * unlikely. If the cookie IS already on disk, the assert fails with a clear message so the
+     * observation is investigated rather than silently passing.
      */
     @Test
-    fun persistentCookie_resumedNoFlush_isNotReliablyOnDisk() {
+    fun persistentCookie_noFlushTrigger_isNotYetOnDisk() {
         val name = uniqueName("flush_resumed")
-        EmbaraPrefs.setServerUrl(targetContext, TEST_ORIGIN)
+        // Set a persistent cookie directly via CookieManager. No flush(), no Activity, no page load
+        // — so nothing should trigger a write to the on-disk Chromium store.
         seedCookie(name, persistent = true)
 
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-            scenario.moveToState(Lifecycle.State.RESUMED)
-            // Do NOT pause. Check disk promptly within a short window — long enough to catch an
-            // eager flush, short enough that a background auto-flush timer is unlikely to fire.
-            val onDiskEarly = cookieOnDiskWithin(name, persistentOnly = true, windowMs = NO_FLUSH_WINDOW_MS)
+        // Check disk promptly within a short window — long enough to catch an immediate/eager flush
+        // if one existed, short enough that a background auto-flush timer is unlikely to fire.
+        val onDiskEarly = cookieOnDiskWithin(name, persistentOnly = true, windowMs = NO_FLUSH_WINDOW_MS)
 
-            assertFalse(
-                "OBSERVED EAGER FLUSH: persistent cookie '$name' reached disk within " +
-                    "${NO_FLUSH_WINDOW_MS}ms while the activity was RESUMED and never paused. The " +
-                    "documented process-death gap assumes NOTHING flushes eagerly (only onPause / " +
-                    "page events do). If this is consistently reproducible the persistence model has " +
-                    "changed and the gap analysis must be revisited. Checked: " +
-                    cookieStoreFile().absolutePath,
-                onDiskEarly
-            )
-        }
+        // Sanity: the cookie really was set and lives in memory, retrievable via getCookie, even
+        // though it has not been flushed to disk.
+        val header = getCookieHeader(TEST_ORIGIN + "/")
+        assertTrue(
+            "Precondition failed: persistent cookie '$name' was not retrievable in memory via " +
+                "CookieManager.getCookie after setCookie. Observed header: $header",
+            header != null && header.contains(name)
+        )
+
+        assertFalse(
+            "OBSERVED EAGER/UNEXPECTED FLUSH: persistent cookie '$name' reached disk within " +
+                "${NO_FLUSH_WINDOW_MS}ms with NO flush trigger at all — no explicit flush(), no " +
+                "onPause, and no page load. The documented process-death gap assumes a freshly-set " +
+                "persistent cookie is memory-only until SOMETHING flushes it. If this is consistently " +
+                "reproducible, either a background auto-flush landed within the window (widen/shrink " +
+                "NO_FLUSH_WINDOW_MS) or the persistence model changed and the gap analysis must be " +
+                "revisited. Checked: " + cookieStoreFile().absolutePath,
+            onDiskEarly
+        )
     }
 
     /**
