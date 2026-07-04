@@ -3,6 +3,12 @@
 A plain-language history of changes. For the latest version's store text, see the
 "What's new" section on Google Play.
 
+## 1.3.0
+- **Smooth dashboard scrolling.** Fixed pull-to-refresh getting in the way when you scroll
+  the dashboard — it now only triggers when you're already at the top, so scrolling stays
+  smooth.
+- Updated to the latest Android libraries under the hood.
+
 ## 1.2.1
 - **You stay signed in.** Fixed an issue where Embara could sign you out and make
   you log in again almost every time you reopened it. Your session now sticks
