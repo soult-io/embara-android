@@ -63,6 +63,12 @@ class SwipeRefreshGuardTest {
         const val SCROLL_POLL_TIMEOUT_MS = 8_000L
         const val SCROLL_POLL_INTERVAL_MS = 100L
 
+        // The guard reads a value fed ASYNChronously by the JS scroll listener via the
+        // @JavascriptInterface bridge (a scroll event, dispatched on the next frame, then a
+        // cross-thread bridge call). So we poll the guard until it observes the inner scroll
+        // rather than reading it once. The buggy document-only guard never flips, so it times out.
+        const val GUARD_POLL_TIMEOUT_MS = 5_000L
+
         // How far we scroll the inner container down (px). Content is 3000px tall in a full-screen
         // shell, so 2000 is comfortably scrollable and unambiguously "not at top".
         const val TARGET_SCROLL_TOP = 2000
@@ -150,18 +156,44 @@ class SwipeRefreshGuardTest {
                 innerTop >= TARGET_SCROLL_TOP - 50
             )
 
-            val canScrollUp = callCanChildScrollUp(swipeRefresh)
-
             // CORRECT behavior: inner container scrolled down → guard must report can-scroll-up=true
-            // → SwipeRefreshLayout must NOT intercept. Against the current document-only guard this
-            // is false, so THIS assertion is the RED one.
+            // → SwipeRefreshLayout must NOT intercept. The guard's answer is fed asynchronously (JS
+            // scroll event → bridge), so poll until it flips, nudging the scroll each iteration to
+            // guarantee a fresh scroll event lands after the (async) onPageFinished hook injection.
+            // Against the current document-only guard this NEVER becomes true → times out → RED.
+            val deadline = System.currentTimeMillis() + GUARD_POLL_TIMEOUT_MS
+            var canScrollUp = false
+            var nudge = 0
+            while (System.currentTimeMillis() < deadline) {
+                // Toggle between two "scrolled-down" positions so scrollTop actually changes and a
+                // scroll event is guaranteed to fire (re-setting the same value fires nothing).
+                val target = TARGET_SCROLL_TOP - (nudge and 1) * 10
+                evaluateJs(webView) { "document.getElementById('scroller').scrollTop=$target; ''" }
+                nudge++
+                if (callCanChildScrollUp(swipeRefresh)) {
+                    canScrollUp = true
+                    break
+                }
+                Thread.sleep(SCROLL_POLL_INTERVAL_MS)
+            }
+
+            // If it never flipped, surface why (bridge/injection state) to make a failure diagnosable.
+            val diag = if (!canScrollUp) {
+                val hooked = evaluateJs(webView) { "String(!!window.__embaraPtrHooked)" }.trim('"')
+                val bridge = evaluateJs(webView) { "(typeof AndroidPtrBridge)" }.trim('"')
+                " [diag: __embaraPtrHooked=$hooked, typeof AndroidPtrBridge=$bridge, " +
+                    "innerScrollTop=${readInnerScrollTop(webView)}]"
+            } else {
+                ""
+            }
+
             assertTrue(
                 "PTR HIJACK BUG (TREK v3.1.0): inner overflow:auto container is scrolled down " +
                     "(scrollTop=$innerTop) but the guard reports canChildScrollUp()==false, so " +
                     "SwipeRefreshLayout will intercept the drag — blocking inner scroll and firing " +
                     "spurious refreshes. The guard uses webView.canScrollVertically(-1), which only " +
                     "sees the pinned DOCUMENT's scroll offset (always 0). It must instead reflect " +
-                    "the inner scroll container's position.",
+                    "the inner scroll container's position.$diag",
                 canScrollUp
             )
         }
