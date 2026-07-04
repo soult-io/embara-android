@@ -5,9 +5,7 @@ plugins {
 android {
     namespace = "io.soult.embara"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version = release(37)
     }
 
     defaultConfig {
