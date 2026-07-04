@@ -1,7 +1,6 @@
 package io.soult.embara
 
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.lifecycle.Lifecycle
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
@@ -267,28 +266,22 @@ class SwipeRefreshGuardTest {
     // --- WebView load / scroll helpers ---
 
     /**
-     * Replaces the WebView's content with [html] (via a data: URL) and waits for onPageFinished.
+     * Replaces the WebView's content with [html] (via a data: URL) and waits for the load to finish.
      *
-     * We swap the WebViewClient for one that counts down a latch, then restore MainActivity's
-     * original client so later app callbacks are unaffected. The load runs on the main thread.
+     * We deliberately KEEP MainActivity's own WebViewClient in place rather than swapping in a
+     * latch-only client: the production fix injects its capture-phase scroll listener from
+     * MainActivity's WebViewClient.onPageFinished, so the test must load through the real client for
+     * that injection to run (otherwise the bridge is never fed and the guard can't observe inner
+     * scroll). Because we don't own an onPageFinished callback here, we detect completion by polling
+     * document.readyState until it reports "complete" (bounded by the existing timeout). The load
+     * runs on the main thread.
      */
     private fun loadHtmlAndWait(webView: WebView, html: String) {
-        val latch = CountDownLatch(1)
-
         instrumentation.runOnMainSync {
             // Ensure JS + DOM storage are on (MainActivity already enables these, belt-and-braces).
             webView.settings.javaScriptEnabled = true
             webView.settings.domStorageEnabled = true
 
-            webView.webViewClient = object : WebViewClient() {
-                private var fired = false
-                override fun onPageFinished(view: WebView, url: String?) {
-                    if (!fired) {
-                        fired = true
-                        latch.countDown()
-                    }
-                }
-            }
             webView.loadData(
                 android.util.Base64.encodeToString(html.toByteArray(), android.util.Base64.NO_WRAP),
                 "text/html",
@@ -296,7 +289,17 @@ class SwipeRefreshGuardTest {
             )
         }
 
-        if (!latch.await(LOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        val deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(LOAD_TIMEOUT_SECONDS)
+        var ready = false
+        while (System.currentTimeMillis() < deadline) {
+            // evaluateJavascript returns a JSON string, e.g. "\"complete\"".
+            if (evaluateJs(webView) { "document.readyState" }.trim('"') == "complete") {
+                ready = true
+                break
+            }
+            Thread.sleep(SCROLL_POLL_INTERVAL_MS)
+        }
+        if (!ready) {
             throw AssertionError("Timed out waiting for the pinned-document data: URL to load")
         }
 

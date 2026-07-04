@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -41,6 +42,13 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     private var serverUrl: String = ""
     private var serverHost: String = ""
     private var isShowingErrorPage = false
+
+    // JS scroll-bridge. TREK v3.1.0 pins the document (html{overflow:hidden}) and scrolls an INNER
+    // overflow:auto container, so webView.canScrollVertically(-1) — which only sees the document's
+    // (always 0) scroll offset — can't tell whether the user has scrolled. A capture-phase document
+    // scroll listener injected on every page load reports the active scroll container's scrollTop
+    // here; the pull-to-refresh guard consults it so SwipeRefreshLayout stops hijacking inner scroll.
+    private val ptrBridge = PtrScrollBridge()
 
     // Periodic cookie flush while RESUMED. Persists the post-login trek_session cookie to
     // disk within a couple seconds even with no navigation/onPause, defeating Chromium's
@@ -97,6 +105,9 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
             webViewClient = createWebViewClient()
             webChromeClient = createWebChromeClient()
+
+            // Bridge for the JS scroll listener injected in onPageFinished (see ptrBridge).
+            addJavascriptInterface(ptrBridge, PTR_BRIDGE_NAME)
         }
 
         CookieManager.getInstance().apply {
@@ -110,9 +121,11 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
 
-            // Only trigger refresh when WebView is scrolled to the top
+            // Only trigger refresh when the active scroll container is at the top. Consult BOTH the
+            // JS bridge (catches TREK's inner overflow:auto scroll) AND canScrollVertically (catches
+            // ordinary document scroll); either being scrolled means the child can scroll up.
             setOnChildScrollUpCallback { _, _ ->
-                webView.canScrollVertically(-1)
+                ptrBridge.activeScrollTop > 0 || webView.canScrollVertically(-1)
             }
 
             setOnRefreshListener {
@@ -278,11 +291,21 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             }
         }
 
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            super.onPageStarted(view, url, favicon)
+            // A fresh navigation starts at the top; clear the cached scrollTop so the guard reports
+            // "at top" until a scroll actually fires on the new page (the injected hook resets its
+            // per-document dedupe flag automatically since window.__embaraPtrHooked is gone).
+            ptrBridge.reportScrollTop(0)
+        }
+
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
             // Persist cookies to disk as soon as a navigation completes (e.g. right
             // after login) so a hard process kill before onPause can't lose the session.
             CookieManager.getInstance().flush()
+            // Inject the capture-phase scroll listener that feeds ptrBridge (see ptrBridge / guard).
+            view.evaluateJavascript(PTR_SCROLL_HOOK_JS, null)
             // Only dismiss when fully loaded (not on intermediate redirects)
             if (view.progress >= 100) {
                 dismissRefreshSpinner()
@@ -301,6 +324,9 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             // the trek_session cookie to disk immediately rather than waiting ~30s for
             // Chromium's lazy flush (which is lost if the process dies first).
             CookieManager.getInstance().flush()
+            // A client-side route change lands at the top of the new view; clear the cached scrollTop
+            // so pull-to-refresh is allowed again until the user scrolls the new route.
+            ptrBridge.reportScrollTop(0)
             updateSwipeRefreshForUrl(url)
         }
 
@@ -440,9 +466,47 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         super.onDestroy()
     }
 
+    /**
+     * Bridge exposed to the WebView's JS as [PTR_BRIDGE_NAME]. The injected capture-phase scroll
+     * listener calls [reportScrollTop] with the active scroll container's scrollTop; the
+     * pull-to-refresh guard reads [activeScrollTop]. @Volatile because JS callbacks arrive on a
+     * WebView background thread while the guard reads on the UI thread.
+     */
+    private class PtrScrollBridge {
+        @Volatile
+        var activeScrollTop: Int = 0
+            private set
+
+        @JavascriptInterface
+        fun reportScrollTop(top: Int) {
+            activeScrollTop = top
+        }
+    }
+
     companion object {
         private const val KEY_ERROR_PAGE = "isShowingErrorPage"
         private const val REFRESH_TIMEOUT_MS = 15_000L
         private const val COOKIE_FLUSH_INTERVAL_MS = 2_000L
+
+        private const val PTR_BRIDGE_NAME = "AndroidPtrBridge"
+
+        // Injected on every page load (onPageFinished). A capture-phase document scroll listener is
+        // required because inner-element scroll events do NOT bubble; it reports the scrolled
+        // element's scrollTop (or the document's) to the bridge. Idempotent per document via
+        // window.__embaraPtrHooked. All work is wrapped in try/catch so a page quirk can never break.
+        private const val PTR_SCROLL_HOOK_JS = """
+            (function(){
+              if (window.__embaraPtrHooked) return; window.__embaraPtrHooked = true;
+              document.addEventListener('scroll', function(e){
+                try {
+                  var t = e.target;
+                  var top = (t && t.nodeType === 1 && typeof t.scrollTop === 'number')
+                            ? t.scrollTop
+                            : ((document.scrollingElement && document.scrollingElement.scrollTop) || 0);
+                  AndroidPtrBridge.reportScrollTop(Math.round(top));
+                } catch (_) {}
+              }, true);
+            })();
+        """
     }
 }
