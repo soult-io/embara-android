@@ -86,6 +86,10 @@ class EmbaraDashboardPtrE2ETest {
      */
     @Test
     fun dashboardScrolled_suppressesPullToRefresh() {
+        // This test needs the SCROLLABLE dashboard view. A real login redirects TREK to the dashboard
+        // route that renders the scrollable content list; a cookie-reuse GET of the root lands on a
+        // non-scrollable landing view. So force a fresh login here (unlike the reuse in the other tests).
+        trek.clearCookies()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
             val (webView, swipeRefresh) = trek.loginAndReachDashboard(scenario)
