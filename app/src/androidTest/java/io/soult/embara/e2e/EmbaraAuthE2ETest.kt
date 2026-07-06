@@ -12,6 +12,7 @@ import io.soult.embara.e2e.support.E2EConfig
 import io.soult.embara.e2e.support.ServerHealthCheck
 import org.json.JSONObject
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -45,8 +46,14 @@ class EmbaraAuthE2ETest {
     private companion object {
         const val PAGE_LOAD_TIMEOUT_MS = 25_000L
         const val LOGIN_TIMEOUT_MS = 40_000L
+        // Shorter budget for the negative test: long enough for a rejected login to round-trip, short
+        // enough not to bloat the suite. If not authenticated within this window, it won't be.
+        const val NEGATIVE_TIMEOUT_MS = 15_000L
         const val JS_RESULT_SECONDS = 10L
         const val POLL_MS = 300L
+        // A deliberately wrong password — a fixed literal, NOT derived from the real one, so nothing
+        // sensitive is constructed for the negative test.
+        const val WRONG_PASSWORD = "e2e-intentionally-wrong-password"
     }
 
     @Before
@@ -91,7 +98,7 @@ class EmbaraAuthE2ETest {
 
             assertTrue("Login page never finished loading.", waitForLoginForm(webView))
 
-            val outcome = submitLogin(webView)
+            val outcome = submitLogin(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
             assertTrue(
                 "Could not drive the TREK login form (outcome=$outcome). The form's email/password " +
                     "inputs weren't found by the heuristic selectors.",
@@ -111,14 +118,88 @@ class EmbaraAuthE2ETest {
         }
     }
 
+    /**
+     * B (negative) — WRONG credentials must NOT reach the dashboard. This proves login_reachesDashboard
+     * isn't a tautology: the identical success signal, fed a bad password, must stay on the login page.
+     */
+    @Test
+    fun wrongCredentials_doNotReachDashboard() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val webView = webViewOf(scenario)
+            val swipeRefresh = swipeRefreshOf(scenario)
+
+            assertTrue("Login page never finished loading.", waitForLoginForm(webView))
+
+            val outcome = submitLogin(webView, E2EConfig.userEmail!!, WRONG_PASSWORD)
+            assertTrue(
+                "Could not drive the login form (outcome=$outcome).",
+                outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
+            )
+
+            assertFalse(
+                "Wrong credentials reached the authenticated dashboard — authentication isn't being " +
+                    "enforced (or the success signal is a tautology).",
+                waitForAuthenticatedDashboard(webView, swipeRefresh, NEGATIVE_TIMEOUT_MS),
+            )
+            assertTrue(
+                "After a rejected login the app should remain on the login form (last path=" +
+                    "${currentPath(webView)}).",
+                loginFormPresent(webView),
+            )
+        }
+    }
+
+    /**
+     * B6 — the session survives an app relaunch: after login, a fresh MainActivity (new WebView) lands
+     * on the dashboard directly, no re-login, from the retained trek_session cookie. NOTE: this is an
+     * ACTIVITY relaunch within the SAME process (a new WebView reading the shared CookieManager). A full
+     * process kill — which is what the cookie-flush-TO-DISK fix actually guards — isn't simulable from an
+     * in-process instrumented test, so this locks the activity-relaunch case only, not the disk-flush.
+     */
+    @Test
+    fun session_survivesRelaunch() {
+        // 1. Log in.
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val webView = webViewOf(scenario)
+            val swipeRefresh = swipeRefreshOf(scenario)
+            assertTrue("Login page never finished loading.", waitForLoginForm(webView))
+            val outcome = submitLogin(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
+            assertTrue(
+                "Could not drive the login form (outcome=$outcome).",
+                outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
+            )
+            assertTrue(
+                "Precondition failed: the initial login didn't reach the dashboard.",
+                waitForAuthenticatedDashboard(webView, swipeRefresh),
+            )
+        }
+
+        // 2. Relaunch — a NEW activity/WebView must reach the dashboard with NO login form.
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val webView = webViewOf(scenario)
+            val swipeRefresh = swipeRefreshOf(scenario)
+            assertTrue(
+                "The session did not survive the activity relaunch — the login form reappeared / " +
+                    "dashboard pull-to-refresh never enabled after re-launching MainActivity.",
+                waitForAuthenticatedDashboard(webView, swipeRefresh),
+            )
+        }
+    }
+
     // --- login form driving (password never logged) ---
 
-    /** Waits until a password field is present in the DOM (the login form has rendered). */
+    /** Whether the login form (a password field) is currently in the DOM. */
+    private fun loginFormPresent(webView: WebView): Boolean =
+        evalJs(webView, "String(!!document.querySelector('input[type=password]'))").trim('"') == "true"
+
+    /** Waits until the login form has rendered. */
     private fun waitForLoginForm(webView: WebView): Boolean {
         val deadline = System.currentTimeMillis() + PAGE_LOAD_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
-            val ready = evalJs(webView, "String(!!document.querySelector('input[type=password]'))")
-            if (ready.trim('"') == "true") return true
+            if (loginFormPresent(webView)) return true
             Thread.sleep(POLL_MS)
         }
         return false
@@ -130,9 +211,9 @@ class EmbaraAuthE2ETest {
      * ("SUBMITTED" / "FORM_SUBMIT" / "NO_FORM" / "NO_SUBMIT"); the credential values never appear in
      * the return value or any log.
      */
-    private fun submitLogin(webView: WebView): String {
-        val user = JSONObject.quote(E2EConfig.userEmail!!)
-        val pass = JSONObject.quote(E2EConfig.password!!)
+    private fun submitLogin(webView: WebView, userEmail: String, password: String): String {
+        val user = JSONObject.quote(userEmail)
+        val pass = JSONObject.quote(password)
         val script = """
             (function(){
               var pw = document.querySelector('input[type=password]');
@@ -166,11 +247,14 @@ class EmbaraAuthE2ETest {
      * dashboard-route gating). Requiring the login form to disappear is what makes this prove real
      * authentication rather than merely observing PTR on a root-path login page.
      */
-    private fun waitForAuthenticatedDashboard(webView: WebView, swipeRefresh: SwipeRefreshLayout): Boolean {
-        val deadline = System.currentTimeMillis() + LOGIN_TIMEOUT_MS
+    private fun waitForAuthenticatedDashboard(
+        webView: WebView,
+        swipeRefresh: SwipeRefreshLayout,
+        timeoutMs: Long = LOGIN_TIMEOUT_MS,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            val loginGone =
-                evalJs(webView, "String(!document.querySelector('input[type=password]'))").trim('"') == "true"
+            val loginGone = !loginFormPresent(webView)
             val enabled = arrayOf(false)
             instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
             if (loginGone && enabled[0]) return true
