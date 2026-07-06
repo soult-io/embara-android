@@ -16,6 +16,25 @@ android {
         versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // T3 E2E config injection. A host-only secret file (self-hosted FRAME-DESK runner) holds the
+        // test TREK server + seeded gplay-test-acc credentials as KEY=VALUE lines:
+        //     SERVER_URL=https://trek-test.stabpablo.eu
+        //     USER_EMAIL=gplay-test-acc@soult.io
+        //     PASSWORD=...
+        // Read it at configure time and forward to `am instrument` as -e args — NOT baked into the APK,
+        // never committed. Absent on PR / dev machines -> args unset -> E2E journeys skip (ServerHealthCheck).
+        val e2eCredsFile = System.getenv("EMBARA_E2E_CREDS_FILE") ?: "/srv/android/secrets/trek-test.creds"
+        val credsPath = file(e2eCredsFile)
+        if (credsPath.isFile) {
+            val creds = credsPath.readLines()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+                .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+            creds["SERVER_URL"]?.let { testInstrumentationRunnerArguments["e2eServerUrl"] = it }
+            creds["USER_EMAIL"]?.let { testInstrumentationRunnerArguments["e2eUserEmail"] = it }
+            creds["PASSWORD"]?.let { testInstrumentationRunnerArguments["e2ePassword"] = it }
+        }
     }
 
     signingConfigs {
