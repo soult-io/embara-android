@@ -152,9 +152,10 @@ class EmbaraAuthE2ETest {
 
     /**
      * B6 — the session survives an app relaunch: after login, a fresh MainActivity (new WebView) lands
-     * on the dashboard directly, no re-login, from the persisted trek_session cookie (regression lock
-     * for the cookie-flush-to-disk fix). NOTE: exercises an ACTIVITY relaunch within the same process —
-     * a full process kill isn't simulable from an in-process instrumented test.
+     * on the dashboard directly, no re-login, from the retained trek_session cookie. NOTE: this is an
+     * ACTIVITY relaunch within the SAME process (a new WebView reading the shared CookieManager). A full
+     * process kill — which is what the cookie-flush-TO-DISK fix actually guards — isn't simulable from an
+     * in-process instrumented test, so this locks the activity-relaunch case only, not the disk-flush.
      */
     @Test
     fun session_survivesRelaunch() {
@@ -181,8 +182,8 @@ class EmbaraAuthE2ETest {
             val webView = webViewOf(scenario)
             val swipeRefresh = swipeRefreshOf(scenario)
             assertTrue(
-                "Session did not survive relaunch — the login form reappeared / dashboard PTR never " +
-                    "enabled. The trek_session cookie wasn't persisted (cookie-flush regression).",
+                "The session did not survive the activity relaunch — the login form reappeared / " +
+                    "dashboard pull-to-refresh never enabled after re-launching MainActivity.",
                 waitForAuthenticatedDashboard(webView, swipeRefresh),
             )
         }
