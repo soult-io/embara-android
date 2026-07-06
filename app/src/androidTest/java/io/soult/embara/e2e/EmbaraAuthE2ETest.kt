@@ -57,17 +57,26 @@ class EmbaraAuthE2ETest {
             "E2E auth skipped: no test credentials injected.",
             E2EConfig.hasCredentials,
         )
+        // Start from a clean session so the login form is actually shown — a stale trek_session cookie
+        // would auto-authenticate and defeat the point of the login test.
+        clearCookies()
         EmbaraPrefs.setServerUrl(context, E2EConfig.serverUrl!!)
     }
 
     @After
     fun tearDown() {
         try {
-            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            clearCookies()
             EmbaraPrefs.clearServerUrl(context)
         } catch (_: Exception) {
             // Best-effort — never fail the suite on cleanup.
         }
+    }
+
+    private fun clearCookies() {
+        val cm = android.webkit.CookieManager.getInstance()
+        cm.removeAllCookies(null)
+        cm.flush()
     }
 
     /**
@@ -89,10 +98,15 @@ class EmbaraAuthE2ETest {
                 outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
             )
 
+            // Authenticated iff we LEFT the login page (its password field is gone — a failed login
+            // stays put) AND embara enabled pull-to-refresh (its dashboard-route gating). Requiring
+            // both makes this fail if authentication didn't actually happen — it is not satisfied by
+            // merely sitting on a root-path login page.
             assertTrue(
-                "Login did not reach the dashboard within ${LOGIN_TIMEOUT_MS}ms " +
-                    "(pull-to-refresh never enabled; last path=${currentPath(webView)}).",
-                waitForDashboard(swipeRefresh),
+                "Login did not reach the authenticated dashboard within ${LOGIN_TIMEOUT_MS}ms " +
+                    "(login form still present or pull-to-refresh never enabled; last path=" +
+                    "${currentPath(webView)}). Check the seeded credentials / TREK login flow.",
+                waitForAuthenticatedDashboard(webView, swipeRefresh),
             )
         }
     }
@@ -146,13 +160,20 @@ class EmbaraAuthE2ETest {
         return evalJs(webView, script).trim('"')
     }
 
-    /** Dashboard reached when MainActivity enables pull-to-refresh (dashboard-only route gating). */
-    private fun waitForDashboard(swipeRefresh: SwipeRefreshLayout): Boolean {
+    /**
+     * Authenticated when BOTH hold: the login form is gone (its password field is no longer in the DOM
+     * — a failed login stays on the form) AND MainActivity has enabled pull-to-refresh (its
+     * dashboard-route gating). Requiring the login form to disappear is what makes this prove real
+     * authentication rather than merely observing PTR on a root-path login page.
+     */
+    private fun waitForAuthenticatedDashboard(webView: WebView, swipeRefresh: SwipeRefreshLayout): Boolean {
         val deadline = System.currentTimeMillis() + LOGIN_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
+            val loginGone =
+                evalJs(webView, "String(!document.querySelector('input[type=password]'))").trim('"') == "true"
             val enabled = arrayOf(false)
             instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
-            if (enabled[0]) return true
+            if (loginGone && enabled[0]) return true
             Thread.sleep(POLL_MS)
         }
         return false
