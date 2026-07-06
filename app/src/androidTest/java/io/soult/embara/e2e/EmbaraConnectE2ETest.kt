@@ -15,8 +15,8 @@ import io.soult.embara.R
 import io.soult.embara.SetupActivity
 import io.soult.embara.e2e.support.E2EConfig
 import io.soult.embara.e2e.support.ServerHealthCheck
+import io.soult.embara.e2e.support.TrekE2E
 import org.junit.After
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -35,6 +35,7 @@ class EmbaraConnectE2ETest {
 
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
+    private val trek = TrekE2E(InstrumentationRegistry.getInstrumentation())
 
     private companion object {
         const val WEBVIEW_LOAD_TIMEOUT_MS = 20_000L
@@ -80,7 +81,7 @@ class EmbaraConnectE2ETest {
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
-            val webView = webViewOf(scenario)
+            val webView = trek.webViewOf(scenario)
             assertTrue(
                 "WebView never loaded the configured test server ($serverUrl).",
                 waitForWebViewHost(webView, serverUrl),
@@ -89,18 +90,6 @@ class EmbaraConnectE2ETest {
     }
 
     // --- helpers ---
-
-    private fun webViewOf(scenario: ActivityScenario<MainActivity>): WebView {
-        val holder = arrayOfNulls<WebView>(1)
-        scenario.onActivity { activity ->
-            val field = MainActivity::class.java.getDeclaredField("webView").apply {
-                isAccessible = true
-            }
-            holder[0] = field.get(activity) as WebView
-        }
-        assertNotNull("Could not reflectively obtain MainActivity.webView", holder[0])
-        return holder[0]!!
-    }
 
     private fun waitForWebViewHost(webView: WebView, serverUrl: String): Boolean {
         val host = android.net.Uri.parse(serverUrl).host ?: return false
