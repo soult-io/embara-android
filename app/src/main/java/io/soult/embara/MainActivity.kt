@@ -296,7 +296,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             // A fresh navigation starts at the top; clear the cached scrollTop so the guard reports
             // "at top" until a scroll actually fires on the new page (the injected hook resets its
             // per-document dedupe flag automatically since window.__embaraPtrHooked is gone).
-            ptrBridge.reportScrollTop(0)
+            ptrBridge.resetToTop()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -326,7 +326,7 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             CookieManager.getInstance().flush()
             // A client-side route change lands at the top of the new view; clear the cached scrollTop
             // so pull-to-refresh is allowed again until the user scrolls the new route.
-            ptrBridge.reportScrollTop(0)
+            ptrBridge.resetToTop()
             updateSwipeRefreshForUrl(url)
         }
 
@@ -479,7 +479,16 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
         @JavascriptInterface
         fun reportScrollTop(top: Int) {
-            activeScrollTop = top
+            // Clamp negatives: rubber-band/overscroll can momentarily report a negative scrollTop,
+            // which must not read as "scrolled" (any value > 0 disables pull-to-refresh).
+            activeScrollTop = top.coerceAtLeast(0)
+        }
+
+        // Called from the UI thread on a fresh navigation / SPA route change: the new view starts at
+        // the top, so pull-to-refresh is allowed again until the user actually scrolls it. Kept off
+        // the @JavascriptInterface surface — reset is a native concern, not something JS should drive.
+        fun resetToTop() {
+            activeScrollTop = 0
         }
     }
 
