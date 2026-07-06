@@ -38,7 +38,10 @@ class EmbaraDashboardPtrE2ETest {
 
     private companion object {
         const val SCROLL_TARGET = 600
-        const val GUARD_POLL_TIMEOUT_MS = 6_000L
+        // Generous: the dashboard's scrollable content may still be rendering when we arrive (more so
+        // now that session-reuse skips the login round-trip), so poll for a scrollable container to
+        // appear before concluding there's nothing to scroll.
+        const val GUARD_POLL_TIMEOUT_MS = 15_000L
         const val SETTLE_MS = 400L
         const val POLL_MS = 250L
         const val RELOAD_TIMEOUT_MS = 20_000L
