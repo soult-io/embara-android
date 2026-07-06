@@ -16,6 +16,33 @@ android {
         versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // T3 E2E config injection. A host-only secret file (self-hosted FRAME-DESK runner) holds the
+        // test TREK server + seeded test-account credentials as KEY=VALUE lines:
+        //     SERVER_URL=https://trek-test.stabpablo.eu
+        //     TREK_USER=gplay-test-acc@soult.io
+        //     TREK_PASS=...
+        // Read it at configure time and forward to `am instrument` as -e args — NOT baked into the APK,
+        // never committed. Absent on PR / dev machines -> args unset -> E2E journeys skip (ServerHealthCheck).
+        val e2eCredsFile = System.getenv("EMBARA_E2E_CREDS_FILE") ?: "/srv/android/secrets/trek-test.creds"
+        val credsPath = file(e2eCredsFile)
+        if (credsPath.isFile && credsPath.canRead()) {
+            val creds = credsPath.readLines()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+                .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+            // Diagnostic — key NAMES only, never values — so the container's view of the secret is
+            // observable in the build log without leaking anything.
+            project.logger.lifecycle("E2E creds ${credsPath.path}: readable, keys=${creds.keys.sorted()}")
+            creds["SERVER_URL"]?.let { testInstrumentationRunnerArguments["e2eServerUrl"] = it }
+            creds["TREK_USER"]?.let { testInstrumentationRunnerArguments["e2eUserEmail"] = it }
+            creds["TREK_PASS"]?.let { testInstrumentationRunnerArguments["e2ePassword"] = it }
+        } else {
+            project.logger.lifecycle(
+                "E2E creds ${credsPath.path}: not visible to the build " +
+                    "(exists=${credsPath.exists()}, readable=${credsPath.canRead()}) — E2E journeys will skip.",
+            )
+        }
     }
 
     signingConfigs {
