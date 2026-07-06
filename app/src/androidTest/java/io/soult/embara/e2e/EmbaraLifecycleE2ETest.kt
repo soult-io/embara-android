@@ -9,7 +9,6 @@ import io.soult.embara.MainActivity
 import io.soult.embara.e2e.support.E2EConfig
 import io.soult.embara.e2e.support.ServerHealthCheck
 import io.soult.embara.e2e.support.TrekE2E
-import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -31,18 +30,9 @@ class EmbaraLifecycleE2ETest {
     fun setUp() {
         ServerHealthCheck.assumeReachable()
         assumeTrue("E2E lifecycle skipped: no test credentials injected.", E2EConfig.hasCredentials)
-        trek.clearCookies()
+        // Reuse the authenticated session (do NOT clear cookies) so the suite doesn't re-login here —
+        // avoids hammering the shared live test server's login endpoint. See TrekE2E.loginAndReachDashboard.
         EmbaraPrefs.setServerUrl(context, E2EConfig.serverUrl!!)
-    }
-
-    @After
-    fun tearDown() {
-        try {
-            trek.clearCookies()
-            EmbaraPrefs.clearServerUrl(context)
-        } catch (_: Exception) {
-            // Best-effort cleanup.
-        }
     }
 
     /**

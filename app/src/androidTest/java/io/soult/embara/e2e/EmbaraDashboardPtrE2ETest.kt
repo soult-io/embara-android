@@ -10,7 +10,6 @@ import io.soult.embara.MainActivity
 import io.soult.embara.e2e.support.E2EConfig
 import io.soult.embara.e2e.support.ServerHealthCheck
 import io.soult.embara.e2e.support.TrekE2E
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -49,18 +48,10 @@ class EmbaraDashboardPtrE2ETest {
     fun setUp() {
         ServerHealthCheck.assumeReachable()
         assumeTrue("E2E dashboard-PTR skipped: no test credentials injected.", E2EConfig.hasCredentials)
-        trek.clearCookies()
+        // Intentionally do NOT clear cookies: these tests reuse the authenticated session across the
+        // class (loginAndReachDashboard reuses it), so the suite logs in once instead of per test —
+        // keeping the live test server from rate-limiting repeated logins.
         EmbaraPrefs.setServerUrl(context, E2EConfig.serverUrl!!)
-    }
-
-    @After
-    fun tearDown() {
-        try {
-            trek.clearCookies()
-            EmbaraPrefs.clearServerUrl(context)
-        } catch (_: Exception) {
-            // Best-effort cleanup.
-        }
     }
 
     /**
