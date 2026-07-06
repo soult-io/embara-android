@@ -39,7 +39,11 @@ class EmbaraConnectE2ETest {
 
     private companion object {
         const val WEBVIEW_LOAD_TIMEOUT_MS = 20_000L
+        const val OFFLINE_TIMEOUT_MS = 20_000L
         const val POLL_MS = 200L
+        // Reserved TLD (RFC 2606) — never resolves, so the WebView load fails and MainActivity's
+        // onReceivedError renders the offline page. Not a real host.
+        const val UNREACHABLE_URL = "https://e2e-unreachable.invalid/"
     }
 
     @Before
@@ -89,7 +93,39 @@ class EmbaraConnectE2ETest {
         }
     }
 
+    /**
+     * A4 — an unreachable server surfaces the offline "No Connection" error page. Sets the server pref
+     * directly (bypassing SetupActivity's reachability validation), so MainActivity loads a bad URL, its
+     * WebViewClient.onReceivedError fires for the main frame, and the custom offline page is shown.
+     */
+    @Test
+    fun unreachableServer_showsOfflineErrorPage() {
+        EmbaraPrefs.setServerUrl(context, UNREACHABLE_URL)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val webView = trek.webViewOf(scenario)
+            assertTrue(
+                "An unreachable server should show the offline 'No Connection' error page, but it didn't.",
+                waitForOfflinePage(webView),
+            )
+        }
+    }
+
     // --- helpers ---
+
+    /** Polls until the offline "No Connection" error page is rendered in the WebView. */
+    private fun waitForOfflinePage(webView: WebView): Boolean {
+        val deadline = System.currentTimeMillis() + OFFLINE_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val shown = trek.evalJs(
+                webView,
+                "String((document.body && document.body.innerText || '').indexOf('No Connection') >= 0)",
+            ).trim('"')
+            if (shown == "true") return true
+            Thread.sleep(POLL_MS)
+        }
+        return false
+    }
 
     private fun waitForWebViewHost(webView: WebView, serverUrl: String): Boolean {
         val host = android.net.Uri.parse(serverUrl).host ?: return false

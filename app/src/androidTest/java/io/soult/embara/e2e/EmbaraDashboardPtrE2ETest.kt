@@ -1,5 +1,6 @@
 package io.soult.embara.e2e
 
+import android.webkit.WebView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -9,7 +10,7 @@ import io.soult.embara.MainActivity
 import io.soult.embara.e2e.support.E2EConfig
 import io.soult.embara.e2e.support.ServerHealthCheck
 import io.soult.embara.e2e.support.TrekE2E
-import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -37,27 +38,23 @@ class EmbaraDashboardPtrE2ETest {
 
     private companion object {
         const val SCROLL_TARGET = 600
-        const val GUARD_POLL_TIMEOUT_MS = 6_000L
+        // Generous: the dashboard's scrollable content may still be rendering when we arrive (more so
+        // now that session-reuse skips the login round-trip), so poll for a scrollable container to
+        // appear before concluding there's nothing to scroll.
+        const val GUARD_POLL_TIMEOUT_MS = 15_000L
         const val SETTLE_MS = 400L
         const val POLL_MS = 250L
+        const val RELOAD_TIMEOUT_MS = 20_000L
     }
 
     @Before
     fun setUp() {
         ServerHealthCheck.assumeReachable()
         assumeTrue("E2E dashboard-PTR skipped: no test credentials injected.", E2EConfig.hasCredentials)
-        trek.clearCookies()
+        // Intentionally do NOT clear cookies: these tests reuse the authenticated session across the
+        // class (loginAndReachDashboard reuses it), so the suite logs in once instead of per test —
+        // keeping the live test server from rate-limiting repeated logins.
         EmbaraPrefs.setServerUrl(context, E2EConfig.serverUrl!!)
-    }
-
-    @After
-    fun tearDown() {
-        try {
-            trek.clearCookies()
-            EmbaraPrefs.clearServerUrl(context)
-        } catch (_: Exception) {
-            // Best-effort cleanup.
-        }
     }
 
     /**
@@ -97,11 +94,12 @@ class EmbaraDashboardPtrE2ETest {
             // scroll bridge is fed asynchronously (scroll event -> capture-phase hook -> bridge). Nudge
             // each iteration so a fresh scroll event is guaranteed to fire.
             var suppressed = false
-            var lastTop = "0"
+            var maxScrolled = 0
             var nudge = 0
             val deadline = System.currentTimeMillis() + GUARD_POLL_TIMEOUT_MS
             while (System.currentTimeMillis() < deadline) {
-                lastTop = trek.evalJs(webView, scrollJs(SCROLL_TARGET - (nudge and 1) * 20)).trim('"')
+                val top = trek.evalJs(webView, scrollJs(SCROLL_TARGET - (nudge and 1) * 20)).trim('"')
+                maxScrolled = maxOf(maxScrolled, top.toIntOrNull() ?: 0)
                 nudge++
                 if (trek.canChildScrollUp(swipeRefresh)) {
                     suppressed = true
@@ -110,14 +108,65 @@ class EmbaraDashboardPtrE2ETest {
                 Thread.sleep(POLL_MS)
             }
 
+            // If nothing was scrollable (seeded dashboard short / non-scrollable on this device), there
+            // is no suppression to exercise — SKIP rather than fail. The suppression LOGIC is covered
+            // deterministically by the hermetic unit test SwipeRefreshGuardTest; this E2E is the
+            // best-effort real-dashboard confirmation and must not depend on the account's data volume.
+            assumeTrue(
+                "Dashboard had no scrollable content to exercise pull-to-refresh suppression " +
+                    "(max scrollTop=$maxScrolled) — skipping the real-dashboard check.",
+                suppressed || maxScrolled > 0,
+            )
             assertTrue(
-                "After scrolling the dashboard content down (scroller top=$lastTop) pull-to-refresh " +
-                    "must be suppressed (canChildScrollUp==true) so the inner scroll isn't hijacked, but " +
-                    "the guard still reports at-top. (If top stayed 0/NO_SCROLLER the seeded dashboard " +
-                    "had no scrollable content to exercise the guard.)",
+                "The dashboard content scrolled (max scrollTop=$maxScrolled) but pull-to-refresh was " +
+                    "NOT suppressed (canChildScrollUp stayed false) — the inner scroll would be hijacked.",
                 suppressed,
             )
         }
+    }
+
+    /**
+     * D13 — a pull-to-refresh actually RELOADS the dashboard: the app's OnRefreshListener reloads the
+     * WebView, producing a fresh document (a JS marker set beforehand is gone), and the session persists
+     * so it lands back on the authenticated dashboard rather than the login page.
+     */
+    @Test
+    fun pullToRefresh_reloadsDashboard() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val (webView, swipeRefresh) = trek.loginAndReachDashboard(scenario)
+
+            // Tag the current document; a reload creates a new document and clears window globals.
+            trek.evalJs(webView, "window.__e2eReloadMarker = '1'; ''")
+            assertEquals(
+                "Test scaffolding: the reload marker wasn't set on the current document.",
+                "1",
+                trek.evalJs(webView, "String(window.__e2eReloadMarker || '')").trim('"'),
+            )
+
+            trek.triggerRefresh(swipeRefresh)
+
+            assertTrue(
+                "Pull-to-refresh did not reload the dashboard within ${RELOAD_TIMEOUT_MS}ms — the JS " +
+                    "marker survived, so no fresh document was loaded.",
+                pollMarkerGone(webView),
+            )
+            assertFalse(
+                "After a refresh the login form should not reappear — the session must persist.",
+                trek.loginFormPresent(webView),
+            )
+        }
+    }
+
+    /** Polls until the reload marker is gone from the document (i.e. a reload produced a fresh page). */
+    private fun pollMarkerGone(webView: WebView): Boolean {
+        val deadline = System.currentTimeMillis() + RELOAD_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val marker = trek.evalJs(webView, "String(window.__e2eReloadMarker || 'GONE')").trim('"')
+            if (marker == "GONE") return true
+            Thread.sleep(POLL_MS)
+        }
+        return false
     }
 
     /**

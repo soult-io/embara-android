@@ -28,6 +28,10 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         const val LOGIN_TIMEOUT_MS = 40_000L
         const val JS_RESULT_SECONDS = 10L
         const val POLL_MS = 300L
+        // Login attempts before giving up, with a backoff between them — rides out a transient slow or
+        // throttled login round-trip against the shared live test server.
+        const val LOGIN_ATTEMPTS = 2
+        const val LOGIN_RETRY_BACKOFF_MS = 6_000L
     }
 
     fun clearCookies() {
@@ -145,26 +149,63 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         return false
     }
 
+    /** Single-shot check: authenticated dashboard == login form gone AND pull-to-refresh enabled. */
+    private fun isAuthenticatedDashboard(webView: WebView, swipeRefresh: SwipeRefreshLayout): Boolean {
+        if (loginFormPresent(webView)) return false
+        val enabled = arrayOf(false)
+        instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
+        return enabled[0]
+    }
+
     /**
-     * Logs in with the injected credentials and asserts the authenticated dashboard is reached; returns
-     * the (WebView, SwipeRefreshLayout) pair for further assertions. Requires [E2EConfig.hasCredentials].
+     * Reaches the authenticated dashboard and returns the (WebView, SwipeRefreshLayout) pair.
+     *
+     * SESSION REUSE: if a prior test in the process already authenticated (its cookies weren't cleared),
+     * the app auto-lands on the dashboard and this returns WITHOUT logging in again — keeping the
+     * login-per-test count low so the shared live TREK test server doesn't rate-limit the suite. Only
+     * when the login form is actually shown does it log in, with a bounded retry to ride out a transient
+     * throttled/slow round-trip. Requires [E2EConfig.hasCredentials].
      */
     fun loginAndReachDashboard(
         scenario: ActivityScenario<MainActivity>,
     ): Pair<WebView, SwipeRefreshLayout> {
         val webView = webViewOf(scenario)
         val swipeRefresh = swipeRefreshOf(scenario)
-        assertTrue("Login page never finished loading.", waitForLoginForm(webView))
-        val outcome = submitLogin(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
+
+        // Wait for the app to settle into either the dashboard (reused session) or the login form.
+        val deadline = System.currentTimeMillis() + PAGE_LOAD_TIMEOUT_MS
+        var sawLoginForm = false
+        while (System.currentTimeMillis() < deadline) {
+            if (isAuthenticatedDashboard(webView, swipeRefresh)) return webView to swipeRefresh
+            if (loginFormPresent(webView)) {
+                sawLoginForm = true
+                break
+            }
+            Thread.sleep(POLL_MS)
+        }
         assertTrue(
-            "Could not drive the TREK login form (outcome=$outcome).",
-            outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
+            "App neither reached the dashboard (reused session) nor showed a login form to sign in.",
+            sawLoginForm,
         )
-        assertTrue(
-            "Login did not reach the authenticated dashboard (last path=${currentPath(webView)}).",
-            waitForAuthenticatedDashboard(webView, swipeRefresh),
+
+        var lastPath = ""
+        repeat(LOGIN_ATTEMPTS) { attempt ->
+            val outcome = submitLogin(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
+            assertTrue(
+                "Could not drive the TREK login form (outcome=$outcome).",
+                outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
+            )
+            if (waitForAuthenticatedDashboard(webView, swipeRefresh)) return webView to swipeRefresh
+            lastPath = currentPath(webView)
+            if (attempt < LOGIN_ATTEMPTS - 1) {
+                Thread.sleep(LOGIN_RETRY_BACKOFF_MS) // let a transient throttle window pass
+                waitForLoginForm(webView) // ensure the form is back before re-submitting
+            }
+        }
+        throw AssertionError(
+            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts " +
+                "(last path=$lastPath). The live test server may be throttling repeated logins.",
         )
-        return webView to swipeRefresh
     }
 
     /**
@@ -175,5 +216,22 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         val result = arrayOf(false)
         instrumentation.runOnMainSync { result[0] = swipeRefresh.canChildScrollUp() }
         return result[0]
+    }
+
+    /**
+     * Invokes the app's pull-to-refresh handler — the wired SwipeRefreshLayout.OnRefreshListener — on
+     * the main thread, exactly what a real pull triggers (MainActivity reloads the WebView). Reached by
+     * reflection because there is no public API to fire onRefresh() programmatically; fails loudly if no
+     * listener is wired.
+     */
+    fun triggerRefresh(swipeRefresh: SwipeRefreshLayout) {
+        instrumentation.runOnMainSync {
+            val field = SwipeRefreshLayout::class.java.getDeclaredField("mListener").apply {
+                isAccessible = true
+            }
+            val listener = field.get(swipeRefresh) as? SwipeRefreshLayout.OnRefreshListener
+                ?: throw AssertionError("No OnRefreshListener is wired on the SwipeRefreshLayout.")
+            listener.onRefresh()
+        }
     }
 }
