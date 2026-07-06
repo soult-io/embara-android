@@ -1,5 +1,6 @@
 package io.soult.embara.e2e
 
+import android.webkit.WebView
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,6 +11,7 @@ import io.soult.embara.e2e.support.E2EConfig
 import io.soult.embara.e2e.support.ServerHealthCheck
 import io.soult.embara.e2e.support.TrekE2E
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -40,6 +42,7 @@ class EmbaraDashboardPtrE2ETest {
         const val GUARD_POLL_TIMEOUT_MS = 6_000L
         const val SETTLE_MS = 400L
         const val POLL_MS = 250L
+        const val RELOAD_TIMEOUT_MS = 20_000L
     }
 
     @Before
@@ -118,6 +121,50 @@ class EmbaraDashboardPtrE2ETest {
                 suppressed,
             )
         }
+    }
+
+    /**
+     * D13 — a pull-to-refresh actually RELOADS the dashboard: the app's OnRefreshListener reloads the
+     * WebView, producing a fresh document (a JS marker set beforehand is gone), and the session persists
+     * so it lands back on the authenticated dashboard rather than the login page.
+     */
+    @Test
+    fun pullToRefresh_reloadsDashboard() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            val (webView, swipeRefresh) = trek.loginAndReachDashboard(scenario)
+
+            // Tag the current document; a reload creates a new document and clears window globals.
+            trek.evalJs(webView, "window.__e2eReloadMarker = '1'; ''")
+            assertEquals(
+                "Test scaffolding: the reload marker wasn't set on the current document.",
+                "1",
+                trek.evalJs(webView, "String(window.__e2eReloadMarker || '')").trim('"'),
+            )
+
+            trek.triggerRefresh(swipeRefresh)
+
+            assertTrue(
+                "Pull-to-refresh did not reload the dashboard within ${RELOAD_TIMEOUT_MS}ms — the JS " +
+                    "marker survived, so no fresh document was loaded.",
+                pollMarkerGone(webView),
+            )
+            assertFalse(
+                "After a refresh the login form should not reappear — the session must persist.",
+                trek.loginFormPresent(webView),
+            )
+        }
+    }
+
+    /** Polls until the reload marker is gone from the document (i.e. a reload produced a fresh page). */
+    private fun pollMarkerGone(webView: WebView): Boolean {
+        val deadline = System.currentTimeMillis() + RELOAD_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val marker = trek.evalJs(webView, "String(window.__e2eReloadMarker || 'GONE')").trim('"')
+            if (marker == "GONE") return true
+            Thread.sleep(POLL_MS)
+        }
+        return false
     }
 
     /**

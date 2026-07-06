@@ -176,4 +176,21 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         instrumentation.runOnMainSync { result[0] = swipeRefresh.canChildScrollUp() }
         return result[0]
     }
+
+    /**
+     * Invokes the app's pull-to-refresh handler — the wired SwipeRefreshLayout.OnRefreshListener — on
+     * the main thread, exactly what a real pull triggers (MainActivity reloads the WebView). Reached by
+     * reflection because there is no public API to fire onRefresh() programmatically; fails loudly if no
+     * listener is wired.
+     */
+    fun triggerRefresh(swipeRefresh: SwipeRefreshLayout) {
+        instrumentation.runOnMainSync {
+            val field = SwipeRefreshLayout::class.java.getDeclaredField("mListener").apply {
+                isAccessible = true
+            }
+            val listener = field.get(swipeRefresh) as? SwipeRefreshLayout.OnRefreshListener
+                ?: throw AssertionError("No OnRefreshListener is wired on the SwipeRefreshLayout.")
+            listener.onRefresh()
+        }
+    }
 }
