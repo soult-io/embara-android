@@ -7,6 +7,18 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege by default: a read-only token is all any job needs except release, which re-grants
+# contents: write to publish the GitHub Release. Fork PRs get a read-only token from GitHub regardless.
+permissions:
+  contents: read
+
+# Fork-safety model. PR checks run on GitHub-hosted runners (ephemeral, secret-free — safe for
+# untrusted fork code). The heavyweight build + instrumented jobs run on the self-hosted FRAME-DESK
+# runner and are gated to push events on THIS repo (github.repository), so a fork PR can never select
+# it. Pair this with the repo Actions setting "Require approval for all outside collaborators"
+# (Settings → Actions → General → Fork pull request workflows) so even the GitHub-hosted PR check
+# needs maintainer approval before it runs on a fork PR.
+
 jobs:
   # Quick checks on PRs — runs on GitHub-hosted (safe for public repo forks)
   check:
@@ -37,9 +49,10 @@ jobs:
       - name: Run lint and unit tests
         run: ./gradlew lint test
 
-  # Full build on push to main — runs on self-hosted FRAME-DESK
+  # Full build on push to main — runs on self-hosted FRAME-DESK.
+  # Gated to pushes on this repo so a fork PR can never run on the self-hosted runner.
   build:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'soult-io/embara-android'
     runs-on: [self-hosted, linux, android]
 
     env:
@@ -107,7 +120,9 @@ jobs:
 
   # Instrumented tests on emulator — runs after build, does not block release
   instrumented-tests:
-    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') &&
+      github.repository == 'soult-io/embara-android'
     needs: build
     runs-on: [self-hosted, linux, android]
 
@@ -151,7 +166,7 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'soult-io/embara-android'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -215,7 +230,9 @@ jobs:
           cd ../signed-aab && sha256sum embara-release.aab > embara-release.aab.sha256
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        # Third-party action on the job that holds the signing secrets — pin to a commit SHA so a
+        # compromised/retagged upstream can't inject code near the keystore. Update deliberately.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             signed/embara-release.apk
