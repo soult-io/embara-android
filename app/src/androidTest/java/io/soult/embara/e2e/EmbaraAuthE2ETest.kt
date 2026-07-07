@@ -84,11 +84,7 @@ class EmbaraAuthE2ETest {
             val swipeRefresh = trek.swipeRefreshOf(scenario)
 
             assertTrue("Login page never finished loading.", trek.waitForLoginForm(webView))
-            val outcome = trek.submitLogin(webView, E2EConfig.userEmail!!, WRONG_PASSWORD)
-            assertTrue(
-                "Could not drive the login form (outcome=$outcome).",
-                outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
-            )
+            trek.signIn(E2EConfig.userEmail!!, WRONG_PASSWORD)
             assertFalse(
                 "Wrong credentials reached the authenticated dashboard — authentication isn't being " +
                     "enforced (or the success signal is a tautology).",
