@@ -103,8 +103,11 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     /** Non-secret: the current route path only (never the full URL / query / token). */
     fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
 
-    /** Whether the WebView is currently on the TREK login route. */
-    private fun onLoginRoute(webView: WebView): Boolean = currentPath(webView).startsWith(LOGIN_PATH)
+    /** Whether the WebView is currently on the TREK login route (segment-anchored, not a prefix match). */
+    private fun onLoginRoute(webView: WebView): Boolean {
+        val path = currentPath(webView)
+        return path == LOGIN_PATH || path.startsWith("$LOGIN_PATH/")
+    }
 
     /**
      * Authenticated when ALL hold: the WebView is OFF the login route AND the login form is gone AND
@@ -119,11 +122,7 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            val offLogin = !onLoginRoute(webView)
-            val loginGone = !loginFormPresent(webView)
-            val enabled = arrayOf(false)
-            instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
-            if (offLogin && loginGone && enabled[0]) return true
+            if (isAuthenticatedDashboard(webView, swipeRefresh)) return true
             Thread.sleep(POLL_MS)
         }
         return false

@@ -41,7 +41,7 @@ class EmbaraNavigationE2ETest {
     fun setUp() {
         ServerHealthCheck.assumeReachable()
         assumeTrue("E2E nav skipped: no test credentials injected.", E2EConfig.hasCredentials)
-        // Reuse the authenticated session across the suite (see TrekE2E.loginAndReachDashboard).
+        // Reuse the authenticated session across the suite (see TrekE2E.loginAndReachDashboardOrSkip).
         EmbaraPrefs.setServerUrl(context, E2EConfig.serverUrl!!)
     }
 
