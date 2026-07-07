@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
  *
  * SUCCESS SIGNAL — app-behavioral, not TREK-DOM: authenticated == the login form is gone AND
  * MainActivity's dashboard-route pull-to-refresh is enabled. SECRET HYGIENE: the password is only ever
- * spliced into the login form via a JS value-setter — never logged, returned, or read back.
+ * typed into the form via Espresso-Web webKeys ([TrekLoginPage]) — never logged, returned, or read back.
  */
 @RunWith(AndroidJUnit4::class)
 class EmbaraAuthE2ETest {
@@ -84,11 +84,7 @@ class EmbaraAuthE2ETest {
             val swipeRefresh = trek.swipeRefreshOf(scenario)
 
             assertTrue("Login page never finished loading.", trek.waitForLoginForm(webView))
-            val outcome = trek.submitLogin(webView, E2EConfig.userEmail!!, WRONG_PASSWORD)
-            assertTrue(
-                "Could not drive the login form (outcome=$outcome).",
-                outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
-            )
+            trek.signIn(E2EConfig.userEmail!!, WRONG_PASSWORD)
             assertFalse(
                 "Wrong credentials reached the authenticated dashboard — authentication isn't being " +
                     "enforced (or the success signal is a tautology).",

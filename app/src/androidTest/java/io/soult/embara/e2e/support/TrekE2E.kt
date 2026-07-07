@@ -6,7 +6,6 @@ import android.webkit.WebView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
 import io.soult.embara.MainActivity
-import org.json.JSONObject
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import java.util.concurrent.CountDownLatch
@@ -16,10 +15,11 @@ import java.util.concurrent.TimeUnit
  * Shared driver for TREK E2E journeys, so the login flow + WebView plumbing live in one place.
  *
  * Provides: reflection into MainActivity's private WebView / SwipeRefreshLayout; a main-thread
- * evaluateJavascript bridge; TREK login (credentials only ever spliced via JSONObject.quote — never
- * logged, returned, or read back); and the app-behavioral "reached the authenticated dashboard" signal
- * (MainActivity enables pull-to-refresh only on dashboard routes, and the login form disappears on a
- * real login). All WebView / SwipeRefreshLayout access is marshalled to the main thread.
+ * evaluateJavascript bridge for state polling; TREK login delegated to [TrekLoginPage] (Espresso-Web /
+ * WebDriver atoms — the password is never logged, returned, or read back); and the app-behavioral
+ * "reached the authenticated dashboard" signal (MainActivity enables pull-to-refresh only on dashboard
+ * routes, and the login form disappears on a real login). WebView / SwipeRefreshLayout access is
+ * marshalled to the main thread.
  */
 class TrekE2E(private val instrumentation: Instrumentation) {
 
@@ -90,40 +90,11 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     }
 
     /**
-     * Fills the login form and submits, using the native value setter + input/change events so SPA
-     * frameworks register the change (heuristic input selectors). Returns a NON-secret outcome token
-     * ("SUBMITTED"/"FORM_SUBMIT"/"NO_FORM"/"NO_SUBMIT"); credential values never appear in the return
-     * value or any log.
+     * Fills the login form and submits via [TrekLoginPage] (Espresso-Web / WebDriver atoms, with
+     * built-in synchronization and resilient semantic selectors). Throws if the form can't be driven;
+     * the password never appears in any error or log.
      */
-    fun submitLogin(webView: WebView, userEmail: String, password: String): String {
-        val user = JSONObject.quote(userEmail)
-        val pass = JSONObject.quote(password)
-        val script = """
-            (function(){
-              var pw = document.querySelector('input[type=password]');
-              var user = document.querySelector('input[type=email]')
-                       || document.querySelector('input[type=text]')
-                       || document.querySelector('input:not([type=password]):not([type=hidden])');
-              if (!pw || !user) return 'NO_FORM';
-              function setVal(el, v){
-                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                setter.call(el, v);
-                el.dispatchEvent(new Event('input', {bubbles:true}));
-                el.dispatchEvent(new Event('change', {bubbles:true}));
-              }
-              setVal(user, $user);
-              setVal(pw, $pass);
-              var btn = document.querySelector('button[type=submit]')
-                      || document.querySelector('form button')
-                      || document.querySelector('button');
-              if (btn) { btn.click(); return 'SUBMITTED'; }
-              var form = pw.closest('form');
-              if (form) { form.submit(); return 'FORM_SUBMIT'; }
-              return 'NO_SUBMIT';
-            })()
-        """.trimIndent()
-        return evalJs(webView, script).trim('"')
-    }
+    fun signIn(userEmail: String, password: String) = TrekLoginPage.signIn(userEmail, password)
 
     /** Non-secret: the current route path only (never the full URL / query / token). */
     fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
@@ -190,14 +161,20 @@ class TrekE2E(private val instrumentation: Instrumentation) {
 
         var lastPath = ""
         repeat(LOGIN_ATTEMPTS) { attempt ->
-            val outcome = submitLogin(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
-            assertTrue(
-                "Could not drive the TREK login form (outcome=$outcome).",
-                outcome == "SUBMITTED" || outcome == "FORM_SUBMIT",
-            )
+            val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
+            try {
+                signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
+            } catch (e: Throwable) {
+                // A transient Espresso element-resolution hiccup shouldn't abort the flow; retry unless
+                // this was the last attempt, in which case surface the real failure.
+                if (lastAttempt) throw e
+                Thread.sleep(LOGIN_RETRY_BACKOFF_MS)
+                waitForLoginForm(webView)
+                return@repeat
+            }
             if (waitForAuthenticatedDashboard(webView, swipeRefresh)) return webView to swipeRefresh
             lastPath = currentPath(webView)
-            if (attempt < LOGIN_ATTEMPTS - 1) {
+            if (!lastAttempt) {
                 Thread.sleep(LOGIN_RETRY_BACKOFF_MS) // let a transient throttle window pass
                 waitForLoginForm(webView) // ensure the form is back before re-submitting
             }
