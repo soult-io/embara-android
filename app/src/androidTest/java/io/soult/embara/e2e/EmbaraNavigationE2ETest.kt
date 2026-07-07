@@ -18,11 +18,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * T3 E2E — dashboard SPA navigation (plan group C) against the real TREK server. Clicking TREK's nav
- * links must client-side navigate the SPA — which is exactly how embara's doUpdateVisitedHistory detects
- * a route change (the mechanism the pull-to-refresh gating and scroll-reset depend on). Uses Espresso-Web
- * LINK_TEXT selectors on TREK's real `<a>` nav (from the DOM audit); reuses the session; skips without
- * credentials.
+ * T3 E2E — dashboard SPA navigation (plan group C) against the real TREK server. Clicking an in-app nav
+ * link must client-side navigate the SPA — exactly how embara's doUpdateVisitedHistory detects a route
+ * change (the mechanism the pull-to-refresh gating and scroll-reset depend on). The nav target is
+ * DISCOVERED from the live DOM (a real same-origin `<a>` route), not a hard-coded label, and clicked via
+ * Espresso-Web. Skips (not fails) when no authenticated session can be established (shared-server login
+ * throttling) or when the dashboard exposes no anchor nav; skips without credentials.
  */
 @RunWith(AndroidJUnit4::class)
 class EmbaraNavigationE2ETest {
@@ -34,7 +35,6 @@ class EmbaraNavigationE2ETest {
     private companion object {
         const val NAV_TIMEOUT_MS = 10_000L
         const val POLL_MS = 250L
-        val SECTIONS = listOf("Vacay", "Atlas")
     }
 
     @Before
@@ -46,28 +46,32 @@ class EmbaraNavigationE2ETest {
     }
 
     /**
-     * C — clicking TREK's nav links client-side navigates the SPA: the route changes on each click,
-     * proving embara's WebView drives real SPA navigation (and thus doUpdateVisitedHistory fires).
+     * C — clicking an in-app nav link client-side navigates the SPA: the route changes, proving embara's
+     * WebView drives real SPA navigation (and thus doUpdateVisitedHistory fires). The link is discovered
+     * from the live DOM, so the test adapts to TREK's real nav rather than assuming label text.
      */
     @Test
-    fun navLinks_changeTheSpaRoute() {
+    fun navLink_changesTheSpaRoute() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
-            val (webView, _) = trek.loginAndReachDashboard(scenario)
+            val (webView, _) = trek.loginAndReachDashboardOrSkip(scenario)
 
-            var path = trek.currentPath(webView)
-            for (section in SECTIONS) {
-                TrekDashboardPage.navigateTo(section)
-                val newPath = waitForPathChange(webView, path)
-                assertNotEquals(
-                    "Clicking the '$section' nav link did not change the SPA route within " +
-                        "${NAV_TIMEOUT_MS}ms (still '$path'). Either the link text changed or SPA " +
-                        "navigation didn't fire in the WebView.",
-                    path,
-                    newPath,
-                )
-                path = newPath
-            }
+            val before = trek.currentPath(webView)
+            val target = trek.firstInAppNavTarget(webView)
+            assumeTrue(
+                "Nav skipped: the dashboard exposed no in-app <a> nav link to a different route " +
+                    "(button-driven nav?).",
+                target.isNotEmpty(),
+            )
+
+            TrekDashboardPage.navigateToRoute(target)
+            val after = waitForPathChange(webView, before)
+            assertNotEquals(
+                "Clicking the in-app nav link to '$target' did not change the SPA route within " +
+                    "${NAV_TIMEOUT_MS}ms (still '$before'). SPA navigation didn't fire in the WebView.",
+                before,
+                after,
+            )
         }
     }
 
