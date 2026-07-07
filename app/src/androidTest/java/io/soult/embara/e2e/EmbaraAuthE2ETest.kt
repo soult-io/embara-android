@@ -23,7 +23,7 @@ import org.junit.runner.RunWith
  *
  * SUCCESS SIGNAL — app-behavioral, not TREK-DOM: authenticated == the login form is gone AND
  * MainActivity's dashboard-route pull-to-refresh is enabled. SECRET HYGIENE: the password is only ever
- * spliced into the login form via a JS value-setter — never logged, returned, or read back.
+ * typed into the form via Espresso-Web webKeys ([TrekLoginPage]) — never logged, returned, or read back.
  */
 @RunWith(AndroidJUnit4::class)
 class EmbaraAuthE2ETest {

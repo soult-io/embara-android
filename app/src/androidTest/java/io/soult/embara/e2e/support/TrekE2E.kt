@@ -15,10 +15,11 @@ import java.util.concurrent.TimeUnit
  * Shared driver for TREK E2E journeys, so the login flow + WebView plumbing live in one place.
  *
  * Provides: reflection into MainActivity's private WebView / SwipeRefreshLayout; a main-thread
- * evaluateJavascript bridge; TREK login (credentials only ever spliced via JSONObject.quote — never
- * logged, returned, or read back); and the app-behavioral "reached the authenticated dashboard" signal
- * (MainActivity enables pull-to-refresh only on dashboard routes, and the login form disappears on a
- * real login). All WebView / SwipeRefreshLayout access is marshalled to the main thread.
+ * evaluateJavascript bridge for state polling; TREK login delegated to [TrekLoginPage] (Espresso-Web /
+ * WebDriver atoms — the password is never logged, returned, or read back); and the app-behavioral
+ * "reached the authenticated dashboard" signal (MainActivity enables pull-to-refresh only on dashboard
+ * routes, and the login form disappears on a real login). WebView / SwipeRefreshLayout access is
+ * marshalled to the main thread.
  */
 class TrekE2E(private val instrumentation: Instrumentation) {
 
@@ -160,10 +161,20 @@ class TrekE2E(private val instrumentation: Instrumentation) {
 
         var lastPath = ""
         repeat(LOGIN_ATTEMPTS) { attempt ->
-            signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
+            val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
+            try {
+                signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
+            } catch (e: Throwable) {
+                // A transient Espresso element-resolution hiccup shouldn't abort the flow; retry unless
+                // this was the last attempt, in which case surface the real failure.
+                if (lastAttempt) throw e
+                Thread.sleep(LOGIN_RETRY_BACKOFF_MS)
+                waitForLoginForm(webView)
+                return@repeat
+            }
             if (waitForAuthenticatedDashboard(webView, swipeRefresh)) return webView to swipeRefresh
             lastPath = currentPath(webView)
-            if (attempt < LOGIN_ATTEMPTS - 1) {
+            if (!lastAttempt) {
                 Thread.sleep(LOGIN_RETRY_BACKOFF_MS) // let a transient throttle window pass
                 waitForLoginForm(webView) // ensure the form is back before re-submitting
             }
