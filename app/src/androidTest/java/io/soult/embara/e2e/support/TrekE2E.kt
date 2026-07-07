@@ -7,7 +7,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
 import io.soult.embara.MainActivity
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
+import org.junit.AssumptionViolatedException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -30,8 +30,12 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         const val POLL_MS = 300L
         // Login attempts before giving up, with a backoff between them — rides out a transient slow or
         // throttled login round-trip against the shared live test server.
-        const val LOGIN_ATTEMPTS = 2
-        const val LOGIN_RETRY_BACKOFF_MS = 6_000L
+        const val LOGIN_ATTEMPTS = 3
+        const val LOGIN_RETRY_BACKOFF_MS = 8_000L
+        // The TREK login route. "Authenticated" REQUIRES having left it: during a login submit TREK
+        // briefly unmounts the password field while still on /login, which would otherwise read as a
+        // false "dashboard reached". Being off /login closes that hole.
+        const val LOGIN_PATH = "/login"
     }
 
     fun clearCookies() {
@@ -99,10 +103,17 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     /** Non-secret: the current route path only (never the full URL / query / token). */
     fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
 
+    /** Whether the WebView is currently on the TREK login route (segment-anchored, not a prefix match). */
+    private fun onLoginRoute(webView: WebView): Boolean {
+        val path = currentPath(webView)
+        return path == LOGIN_PATH || path.startsWith("$LOGIN_PATH/")
+    }
+
     /**
-     * Authenticated when BOTH hold: the login form is gone (a failed login stays on the form) AND
-     * MainActivity has enabled pull-to-refresh (its dashboard-route gating). Requiring the login form
-     * to disappear is what makes this prove real authentication, not merely PTR on a root-path login.
+     * Authenticated when ALL hold: the WebView is OFF the login route AND the login form is gone AND
+     * MainActivity has enabled pull-to-refresh (its dashboard-route gating). The off-/login clause is
+     * load-bearing: during a login submit the password field briefly unmounts while still on /login, so
+     * form-gone + PTR alone would false-positive; requiring a real (non-login) route rules that out.
      */
     fun waitForAuthenticatedDashboard(
         webView: WebView,
@@ -111,25 +122,25 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            val loginGone = !loginFormPresent(webView)
-            val enabled = arrayOf(false)
-            instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
-            if (loginGone && enabled[0]) return true
+            if (isAuthenticatedDashboard(webView, swipeRefresh)) return true
             Thread.sleep(POLL_MS)
         }
         return false
     }
 
-    /** Single-shot check: authenticated dashboard == login form gone AND pull-to-refresh enabled. */
+    /** Single-shot check: authenticated dashboard == off /login AND login form gone AND PTR enabled. */
     private fun isAuthenticatedDashboard(webView: WebView, swipeRefresh: SwipeRefreshLayout): Boolean {
-        if (loginFormPresent(webView)) return false
+        if (onLoginRoute(webView) || loginFormPresent(webView)) return false
         val enabled = arrayOf(false)
         instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
         return enabled[0]
     }
 
     /**
-     * Reaches the authenticated dashboard and returns the (WebView, SwipeRefreshLayout) pair.
+     * Reaches the authenticated dashboard and returns the (WebView, SwipeRefreshLayout) pair, or `null`
+     * if it couldn't within the attempts (no login form ever appeared, or login never reached an
+     * off-/login dashboard). Callers pick the failure policy: [loginAndReachDashboard] asserts,
+     * [loginAndReachDashboardOrSkip] skips.
      *
      * SESSION REUSE: if a prior test in the process already authenticated (its cookies weren't cleared),
      * the app auto-lands on the dashboard and this returns WITHOUT logging in again — keeping the
@@ -137,9 +148,9 @@ class TrekE2E(private val instrumentation: Instrumentation) {
      * when the login form is actually shown does it log in, with a bounded retry to ride out a transient
      * throttled/slow round-trip. Requires [E2EConfig.hasCredentials].
      */
-    fun loginAndReachDashboard(
+    private fun tryReachDashboard(
         scenario: ActivityScenario<MainActivity>,
-    ): Pair<WebView, SwipeRefreshLayout> {
+    ): Pair<WebView, SwipeRefreshLayout>? {
         val webView = webViewOf(scenario)
         val swipeRefresh = swipeRefreshOf(scenario)
 
@@ -154,12 +165,9 @@ class TrekE2E(private val instrumentation: Instrumentation) {
             }
             Thread.sleep(POLL_MS)
         }
-        assertTrue(
-            "App neither reached the dashboard (reused session) nor showed a login form to sign in.",
-            sawLoginForm,
-        )
+        // Neither an authenticated dashboard nor a login form to act on — can't establish a session.
+        if (!sawLoginForm) return null
 
-        var lastPath = ""
         repeat(LOGIN_ATTEMPTS) { attempt ->
             val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
             try {
@@ -173,16 +181,68 @@ class TrekE2E(private val instrumentation: Instrumentation) {
                 return@repeat
             }
             if (waitForAuthenticatedDashboard(webView, swipeRefresh)) return webView to swipeRefresh
-            lastPath = currentPath(webView)
             if (!lastAttempt) {
                 Thread.sleep(LOGIN_RETRY_BACKOFF_MS) // let a transient throttle window pass
                 waitForLoginForm(webView) // ensure the form is back before re-submitting
             }
         }
-        throw AssertionError(
-            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts " +
-                "(last path=$lastPath). The live test server may be throttling repeated logins.",
+        // Submitted the credentials but never reached an off-/login dashboard within the attempts.
+        return null
+    }
+
+    /**
+     * Reaches the authenticated dashboard or FAILS the test. Use when authentication is the subject
+     * under test (see [tryReachDashboard] for the reuse/retry behavior).
+     */
+    fun loginAndReachDashboard(
+        scenario: ActivityScenario<MainActivity>,
+    ): Pair<WebView, SwipeRefreshLayout> =
+        tryReachDashboard(scenario) ?: throw AssertionError(
+            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts. The live " +
+                "TREK test server may be throttling repeated logins, or no login form appeared.",
         )
+
+    /**
+     * Reaches the authenticated dashboard or SKIPS the test (JUnit assumption) — for tests whose subject
+     * is NOT authentication (e.g. navigation). Login throttling on the shared live TREK server then greys
+     * the test out instead of redding the build; the auth tests ([EmbaraAuthE2ETest]) stay the hard
+     * guardians of login itself, so a genuine login regression is still caught there.
+     */
+    fun loginAndReachDashboardOrSkip(
+        scenario: ActivityScenario<MainActivity>,
+    ): Pair<WebView, SwipeRefreshLayout> =
+        tryReachDashboard(scenario) ?: throw AssumptionViolatedException(
+            "Skipped: could not establish an authenticated TREK session (likely login throttling on the " +
+                "shared test server).",
+        )
+
+    /**
+     * The route (pathname[+hash]) of the first visible, same-origin in-app `<a>` nav link whose target
+     * differs from the current route — discovered from the live DOM so no nav label is hard-coded — or
+     * "" when the dashboard exposes no such anchor (e.g. button-driven nav). Structure only: a route
+     * path, never a full URL / query / token.
+     */
+    fun firstInAppNavTarget(webView: WebView): String {
+        val js = """
+            (function(){
+              try {
+                var here = location.pathname + location.hash;
+                var as = document.querySelectorAll('a[href]');
+                for (var i=0;i<as.length;i++){
+                  var a=as[i];
+                  if (a.offsetParent===null) continue;
+                  var u=new URL(a.href, location.origin);
+                  if (u.origin!==location.origin) continue;
+                  var t=u.pathname+u.hash;
+                  if (t===here) continue;
+                  if (t.indexOf('$LOGIN_PATH')===0) continue;
+                  return t;
+                }
+                return '';
+              } catch(e){ return ''; }
+            })()
+        """.trimIndent()
+        return evalJs(webView, js).trim('"')
     }
 
     /**
