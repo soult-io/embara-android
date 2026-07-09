@@ -1,11 +1,11 @@
 package io.soult.embara.e2e.support
 
 import android.app.Instrumentation
-import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
 import io.soult.embara.MainActivity
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.AssumptionViolatedException
 import java.util.concurrent.CountDownLatch
@@ -36,12 +36,13 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         // briefly unmounts the password field while still on /login, which would otherwise read as a
         // false "dashboard reached". Being off /login closes that hole.
         const val LOGIN_PATH = "/login"
-    }
+        // Short window to confirm the app is NOT (yet) reporting authenticated while the login form shows.
+        const val LOGGED_OUT_SIGNAL_TIMEOUT_MS = 2_500L
 
-    fun clearCookies() {
-        val cm = CookieManager.getInstance()
-        cm.removeAllCookies(null)
-        cm.flush()
+        // DIAGNOSTIC: process-wide count of real login-form submissions, to see how many login-endpoint
+        // hits the whole suite actually makes.
+        @Volatile
+        var signInSubmissions = 0
     }
 
     fun webViewOf(scenario: ActivityScenario<MainActivity>): WebView {
@@ -128,9 +129,30 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         return false
     }
 
-    /** Single-shot check: authenticated dashboard == off /login AND login form gone AND PTR enabled. */
+    /**
+     * Whether the SPA has actually rendered a content page — NOT the empty boot shell. Right after load
+     * the app briefly sits at "/" with an empty body (bodyLen ~31, zero interactive elements) before it
+     * routes to dashboard-vs-login; that shell is off /login with no password field, so without this the
+     * gate false-positives as "authenticated" and a throttled login masquerades as success (then bounces
+     * to /login on the next launch). Real content == any visible interactive/landmark element or text.
+     */
+    private fun hasRenderedContent(webView: WebView): Boolean {
+        val js =
+            "(function(){try{" +
+                "var n=document.querySelectorAll('a[href],button,[role=button],[role=link]," +
+                "[role=tab],nav,main,[role=main]').length;" +
+                "var t=(document.body&&document.body.innerText||'').trim().length;" +
+                "return String(n>0||t>40);}catch(e){return 'false';}})()"
+        return evalJs(webView, js).trim('"') == "true"
+    }
+
+    /**
+     * Single-shot check: authenticated dashboard == off /login AND login form gone AND the SPA has
+     * rendered real content (not the empty boot shell) AND MainActivity's dashboard pull-to-refresh is on.
+     */
     private fun isAuthenticatedDashboard(webView: WebView, swipeRefresh: SwipeRefreshLayout): Boolean {
         if (onLoginRoute(webView) || loginFormPresent(webView)) return false
+        if (!hasRenderedContent(webView)) return false
         val enabled = arrayOf(false)
         instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
         return enabled[0]
@@ -168,9 +190,20 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         // Neither an authenticated dashboard nor a login form to act on — can't establish a session.
         if (!sawLoginForm) return null
 
+        // Non-tautology proof, folded into the one real login: the SAME authenticated-dashboard signal
+        // MUST read false while the login form is showing. This replaces a separate wrong-password test —
+        // a wrong PASSWORD is TREK's server behavior, not embara's, and every extra login round-trip risks
+        // the server's rate limit. A false-positive here would mean the positive assertion proves nothing.
+        assertFalse(
+            "The authenticated-dashboard signal was TRUE while the login form was still showing — the " +
+                "success signal is a tautology and cannot prove a real login.",
+            waitForAuthenticatedDashboard(webView, swipeRefresh, LOGGED_OUT_SIGNAL_TIMEOUT_MS),
+        )
+
         repeat(LOGIN_ATTEMPTS) { attempt ->
             val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
             try {
+                signInSubmissions++
                 signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
             } catch (e: Throwable) {
                 // A transient Espresso element-resolution hiccup shouldn't abort the flow; retry unless
@@ -198,8 +231,9 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         scenario: ActivityScenario<MainActivity>,
     ): Pair<WebView, SwipeRefreshLayout> =
         tryReachDashboard(scenario) ?: throw AssertionError(
-            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts. The live " +
-                "TREK test server may be throttling repeated logins, or no login form appeared.",
+            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts " +
+                "[suite signInSubmissions=$signInSubmissions]. The live TREK test server may be " +
+                "throttling repeated logins, or no login form appeared.",
         )
 
     /**
