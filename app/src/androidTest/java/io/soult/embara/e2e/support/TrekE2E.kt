@@ -7,7 +7,6 @@ import androidx.test.core.app.ActivityScenario
 import io.soult.embara.MainActivity
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.AssumptionViolatedException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -161,8 +160,7 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     /**
      * Reaches the authenticated dashboard and returns the (WebView, SwipeRefreshLayout) pair, or `null`
      * if it couldn't within the attempts (no login form ever appeared, or login never reached an
-     * off-/login dashboard). Callers pick the failure policy: [loginAndReachDashboard] asserts,
-     * [loginAndReachDashboardOrSkip] skips.
+     * off-/login dashboard). [loginAndReachDashboard] turns a null into a test failure.
      *
      * SESSION REUSE: if a prior test in the process already authenticated (its cookies weren't cleared),
      * the app auto-lands on the dashboard and this returns WITHOUT logging in again — keeping the
@@ -235,49 +233,6 @@ class TrekE2E(private val instrumentation: Instrumentation) {
                 "[suite signInSubmissions=$signInSubmissions]. The live TREK test server may be " +
                 "throttling repeated logins, or no login form appeared.",
         )
-
-    /**
-     * Reaches the authenticated dashboard or SKIPS the test (JUnit assumption) — for tests whose subject
-     * is NOT authentication (e.g. navigation). Login throttling on the shared live TREK server then greys
-     * the test out instead of redding the build; the auth tests ([EmbaraAuthE2ETest]) stay the hard
-     * guardians of login itself, so a genuine login regression is still caught there.
-     */
-    fun loginAndReachDashboardOrSkip(
-        scenario: ActivityScenario<MainActivity>,
-    ): Pair<WebView, SwipeRefreshLayout> =
-        tryReachDashboard(scenario) ?: throw AssumptionViolatedException(
-            "Skipped: could not establish an authenticated TREK session (likely login throttling on the " +
-                "shared test server).",
-        )
-
-    /**
-     * The route (pathname[+hash]) of the first visible, same-origin in-app `<a>` nav link whose target
-     * differs from the current route — discovered from the live DOM so no nav label is hard-coded — or
-     * "" when the dashboard exposes no such anchor (e.g. button-driven nav). Structure only: a route
-     * path, never a full URL / query / token.
-     */
-    fun firstInAppNavTarget(webView: WebView): String {
-        val js = """
-            (function(){
-              try {
-                var here = location.pathname + location.hash;
-                var as = document.querySelectorAll('a[href]');
-                for (var i=0;i<as.length;i++){
-                  var a=as[i];
-                  if (a.offsetParent===null) continue;
-                  var u=new URL(a.href, location.origin);
-                  if (u.origin!==location.origin) continue;
-                  var t=u.pathname+u.hash;
-                  if (t===here) continue;
-                  if (t.indexOf('$LOGIN_PATH')===0) continue;
-                  return t;
-                }
-                return '';
-              } catch(e){ return ''; }
-            })()
-        """.trimIndent()
-        return evalJs(webView, js).trim('"')
-    }
 
     /**
      * SwipeRefreshLayout.canChildScrollUp() on the main thread — the pull-to-refresh guard's decision:
