@@ -35,6 +35,9 @@ class TrekLoginProbeTest {
         } catch (e: Exception) {
             "EXCEPTION ${e.javaClass.simpleName}: ${e.message}"
         }
-        throw AssertionError("TREK-LOGIN-PROBE (runner egress): $result")
+        val line = "TREK-LOGIN-PROBE (runner egress): $result"
+        // Write to the downloadable artifact dir so the result can be read back via android-download.
+        runCatching { java.io.File("/data/builds/trek-login-probe.txt").writeText(line) }
+        throw AssertionError(line)
     }
 }
