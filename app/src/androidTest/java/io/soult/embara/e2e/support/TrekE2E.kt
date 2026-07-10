@@ -5,6 +5,7 @@ import android.webkit.WebView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
 import io.soult.embara.MainActivity
+import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import java.util.concurrent.CountDownLatch
@@ -14,10 +15,10 @@ import java.util.concurrent.TimeUnit
  * Shared driver for TREK E2E journeys, so the login flow + WebView plumbing live in one place.
  *
  * Provides: reflection into MainActivity's private WebView / SwipeRefreshLayout; a main-thread
- * evaluateJavascript bridge for state polling; TREK login delegated to [TrekLoginPage] (Espresso-Web /
- * WebDriver atoms — the password is never logged, returned, or read back); and the app-behavioral
- * "reached the authenticated dashboard" signal (MainActivity enables pull-to-refresh only on dashboard
- * routes, and the login form disappears on a real login). WebView / SwipeRefreshLayout access is
+ * evaluateJavascript bridge for state polling; TREK login (fields set via the WebView JS engine, submit
+ * clicked via Espresso-Web — the password is never logged, returned, or read back); and the app-behavioral
+ * "reached the authenticated dashboard" signal (off /login AND the login form gone AND real content
+ * rendered AND MainActivity's dashboard pull-to-refresh enabled). WebView / SwipeRefreshLayout access is
  * marshalled to the main thread.
  */
 class TrekE2E(private val instrumentation: Instrumentation) {
@@ -94,16 +95,16 @@ class TrekE2E(private val instrumentation: Instrumentation) {
      * Sign In button is clicked via Espresso-Web. Throws generically if the fields can't be populated; the
      * password only reaches the WebView JS engine and never appears in a log, return value, or message.
      */
-    fun signIn(webView: WebView, userEmail: String, password: String) {
-        val emailLit = org.json.JSONObject.quote(userEmail)
-        val passLit = org.json.JSONObject.quote(password)
+    private fun signIn(webView: WebView, userEmail: String, password: String) {
+        val emailLit = JSONObject.quote(userEmail)
+        val passLit = JSONObject.quote(password)
         val filled = evalJs(webView, TrekLoginPage.fillFormJs(emailLit, passLit)).trim('"') == "true"
         if (!filled) throw AssertionError("Failed to populate the TREK login form fields.")
         TrekLoginPage.clickSignIn()
     }
 
     /** Non-secret: the current route path only (never the full URL / query / token). */
-    fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
+    private fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
 
     /** Whether the WebView is currently on the TREK login route (segment-anchored, not a prefix match). */
     private fun onLoginRoute(webView: WebView): Boolean {
@@ -138,12 +139,15 @@ class TrekE2E(private val instrumentation: Instrumentation) {
      * to /login on the next launch). Real content == any visible interactive/landmark element or text.
      */
     private fun hasRenderedContent(webView: WebView): Boolean {
-        val js =
-            "(function(){try{" +
-                "var n=document.querySelectorAll('a[href],button,[role=button],[role=link]," +
-                "[role=tab],nav,main,[role=main]').length;" +
-                "var t=(document.body&&document.body.innerText||'').trim().length;" +
-                "return String(n>0||t>40);}catch(e){return 'false';}})()"
+        val js = """
+            (function(){
+              try {
+                var n = document.querySelectorAll('a[href],button,[role=button],[role=link],[role=tab],nav,main,[role=main]').length;
+                var t = (document.body && document.body.innerText || '').trim().length;
+                return String(n > 0 || t > 40);
+              } catch(e){ return 'false'; }
+            })()
+        """.trimIndent()
         return evalJs(webView, js).trim('"') == "true"
     }
 

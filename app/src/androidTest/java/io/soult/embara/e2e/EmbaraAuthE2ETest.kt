@@ -27,8 +27,9 @@ import org.junit.runner.RunWith
  * it, keeping login-endpoint hits far under the shared server's rate limit. The non-tautology proof (the
  * success signal reads false while the login form shows) is folded into [TrekE2E.loginAndReachDashboard];
  * a wrong-PASSWORD test is intentionally omitted (that's TREK's server behavior, not embara's, and it
- * would cost an extra login round-trip). SECRET HYGIENE: the password is only ever typed via Espresso-Web
- * webKeys ([TrekLoginPage]) — never logged, returned, or read back.
+ * would cost an extra login round-trip). SECRET HYGIENE: the password is only ever set into the form via
+ * the WebView JS engine ([TrekLoginPage.fillFormJs]); only the submit click uses Espresso-Web — the value
+ * is never logged, returned, or read back.
  */
 @RunWith(AndroidJUnit4::class)
 class EmbaraAuthE2ETest {

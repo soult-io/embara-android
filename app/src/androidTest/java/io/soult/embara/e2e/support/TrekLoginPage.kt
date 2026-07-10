@@ -19,8 +19,8 @@ import androidx.test.espresso.web.webdriver.Locator
  */
 object TrekLoginPage {
 
-    const val EMAIL = "input[type=email]"
-    const val PASSWORD = "input[type=password]"
+    private const val EMAIL = "input[type=email]"
+    private const val PASSWORD = "input[type=password]"
     private const val SUBMIT = "button[type=submit]"
 
     /**
