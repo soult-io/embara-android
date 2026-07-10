@@ -65,13 +65,32 @@ class CookieRestoreAndClearTest {
     // Unique suffix per run so we never collide with leftover/real cookies in the shared store.
     private val nonce = System.nanoTime().toString()
 
+    // Names this test instance seeded into the process-global CookieManager, so tearDown can expire
+    // exactly those by name instead of a global removeAllCookies. A global wipe in @After would clear
+    // the shared E2E TREK login — the whole instrumented suite reuses ONE authenticated session (see
+    // io.soult.embara.e2e.support.TrekE2E) and a forced re-login trips the live server's rate limit.
+    // Same nonce-scoped teardown hygiene as CookiePersistenceTest / CookieAttributeMatchingTest.
+    private val seededNames = mutableSetOf<String>()
+
     @After
     fun tearDown() {
-        // Best-effort: remove everything and flush so the on-disk store reflects the removal.
-        // Never fail the suite on cleanup.
+        // Best-effort: expire ONLY this instance's own nonce'd cookies (by name, on TEST_URL) and flush
+        // so the on-disk store reflects the removal. Never fail the suite on cleanup, and never touch the
+        // shared TREK session. NOTE: removeAllCookies_clearsCookie / removeSessionCookies_keepsPersistent
+        // still issue the GLOBAL clear in their own bodies — that global API IS their subject and has no
+        // scoped variant — but those two are the ONLY global wipes in this file, a bounded ≤2 that does
+        // not rely on test/class ordering to stay under the suite's login budget.
         try {
-            awaitRemoveAllCookies()
-            instrumentation.runOnMainSync { CookieManager.getInstance().flush() }
+            val names = seededNames.toList()
+            if (names.isEmpty()) return
+            instrumentation.runOnMainSync {
+                val cookieManager = CookieManager.getInstance()
+                for (name in names) {
+                    // name+domain+path is the delete key; a past Max-Age expires the row immediately.
+                    cookieManager.setCookie(TEST_URL, "$name=; Max-Age=0; Path=/; Secure")
+                }
+                cookieManager.flush()
+            }
         } catch (_: Exception) {
             // Best-effort only.
         }
@@ -219,6 +238,7 @@ class CookieRestoreAndClearTest {
     fun cookieSetDuringPageLoad_viaJsDocumentCookie_isStored() {
         val name = "js_$nonce"
         val value = "v_$nonce"
+        seededNames += name
 
         instrumentation.runOnMainSync { CookieManager.getInstance().setAcceptCookie(true) }
 
@@ -285,6 +305,7 @@ class CookieRestoreAndClearTest {
 
     /** Sets a PERSISTENT cookie (Max-Age -> is_persistent=1, has_expires=1) and awaits the callback. */
     private fun setPersistentCookie(name: String, value: String) {
+        seededNames += name
         instrumentation.runOnMainSync { CookieManager.getInstance().setAcceptCookie(true) }
         val latch = CountDownLatch(1)
         instrumentation.runOnMainSync {
@@ -301,6 +322,7 @@ class CookieRestoreAndClearTest {
 
     /** Sets a SESSION cookie (no Max-Age/Expires -> is_persistent=0) and awaits the callback. */
     private fun setSessionCookie(name: String, value: String) {
+        seededNames += name
         instrumentation.runOnMainSync { CookieManager.getInstance().setAcceptCookie(true) }
         val latch = CountDownLatch(1)
         instrumentation.runOnMainSync {

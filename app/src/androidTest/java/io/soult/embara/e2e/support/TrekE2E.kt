@@ -20,6 +20,20 @@ import java.util.concurrent.TimeUnit
  * "reached the authenticated dashboard" signal (off /login AND the login form gone AND real content
  * rendered AND MainActivity's dashboard pull-to-refresh enabled). WebView / SwipeRefreshLayout access is
  * marshalled to the main thread.
+ *
+ * SINGLE-LOGIN INVARIANT — read before adding any E2E test OR any cookie test:
+ * The whole instrumented suite shares ONE authenticated TREK session — the first authenticated test logs
+ * in, every later test reuses the live process-global CookieManager cookie (see [tryReachDashboard]'s
+ * SESSION REUSE). TREK rate-limits its login endpoint (5 attempts / 15 min per client IP), so even a few
+ * forced re-logins turn the suite red with what looks like an app failure. Keep that safety independent of
+ * incidental test/class ordering:
+ *   - Do NOT call CookieManager.removeAllCookies / removeSessionCookies (a global wipe) from an @Before,
+ *     @After, or @Test in this e2e package — a wipe interleaved with the e2e block destroys the shared
+ *     session mid-suite and forces re-logins.
+ *   - Cookie tests in io.soult.embara.* must scope their teardown to their OWN nonce'd cookies (expire by
+ *     name), as CookiePersistenceTest / CookieAttributeMatchingTest / CookieRestoreAndClearTest do. The
+ *     only sanctioned global clears are the two in CookieRestoreAndClearTest whose SUBJECT is the global
+ *     API itself — a bounded ≤2 wipes that stay under the login budget regardless of ordering.
  */
 class TrekE2E(private val instrumentation: Instrumentation) {
 
