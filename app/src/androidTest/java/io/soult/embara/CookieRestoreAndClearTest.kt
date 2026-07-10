@@ -69,7 +69,9 @@ class CookieRestoreAndClearTest {
     // exactly those by name instead of a global removeAllCookies. A global wipe in @After would clear
     // the shared E2E TREK login — the whole instrumented suite reuses ONE authenticated session (see
     // io.soult.embara.e2e.support.TrekE2E) and a forced re-login trips the live server's rate limit.
-    // Same nonce-scoped teardown hygiene as CookiePersistenceTest / CookieAttributeMatchingTest.
+    // Like the sibling cookie tests, this scopes cleanup to its own cookies instead of a global wipe —
+    // each in its own way: CookieAttributeMatchingTest relies on nonce'd names with no teardown,
+    // CookiePersistenceTest clears its fixed names in @Before, this file expires its nonce'd names here.
     private val seededNames = mutableSetOf<String>()
 
     @After

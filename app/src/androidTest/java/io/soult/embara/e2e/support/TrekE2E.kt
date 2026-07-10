@@ -30,10 +30,12 @@ import java.util.concurrent.TimeUnit
  *   - Do NOT call CookieManager.removeAllCookies / removeSessionCookies (a global wipe) from an @Before,
  *     @After, or @Test in this e2e package — a wipe interleaved with the e2e block destroys the shared
  *     session mid-suite and forces re-logins.
- *   - Cookie tests in io.soult.embara.* must scope their teardown to their OWN nonce'd cookies (expire by
- *     name), as CookiePersistenceTest / CookieAttributeMatchingTest / CookieRestoreAndClearTest do. The
- *     only sanctioned global clears are the two in CookieRestoreAndClearTest whose SUBJECT is the global
- *     API itself — a bounded ≤2 wipes that stay under the login budget regardless of ordering.
+ *   - Cookie tests in io.soult.embara.* must scope their cleanup to their OWN cookies instead of a global
+ *     wipe — each in its own way: CookieAttributeMatchingTest relies on nonce'd names with no teardown,
+ *     CookiePersistenceTest clears its fixed names in @Before, CookieRestoreAndClearTest expires its
+ *     nonce'd names in @After. The only sanctioned global clears are the two in CookieRestoreAndClearTest
+ *     whose SUBJECT is the global API itself — a bounded ≤2 wipes that stay under the login budget
+ *     regardless of ordering.
  */
 class TrekE2E(private val instrumentation: Instrumentation) {
 
