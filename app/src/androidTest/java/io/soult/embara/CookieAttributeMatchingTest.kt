@@ -4,7 +4,6 @@ import android.app.Instrumentation
 import android.webkit.CookieManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -68,18 +67,8 @@ class CookieAttributeMatchingTest {
         }
     }
 
-    @After
-    fun tearDown() {
-        // Best-effort cleanup — never fail the suite on teardown.
-        try {
-            instrumentation.runOnMainSync {
-                cookieManager.removeAllCookies(null)
-                cookieManager.flush()
-            }
-        } catch (_: Exception) {
-            // Ignore — cleanup is best-effort only.
-        }
-    }
+    // No teardown clear: cookie names are nonce'd on example.com hosts, so leftovers never collide — and
+    // a global removeAllCookies would wipe the shared E2E TREK session and force a rate-limited re-login.
 
     /**
      * 1. A Secure cookie set on an https origin is returned by getCookie() over https.

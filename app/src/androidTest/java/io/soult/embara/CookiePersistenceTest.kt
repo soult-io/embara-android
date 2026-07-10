@@ -36,19 +36,15 @@ class CookiePersistenceTest {
     @Before
     fun setUp() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        // removeAllCookies + setAcceptCookie must run where the CookieManager has a Looper.
+        // CookieManager work needs a Looper — run on the main thread. Clear ONLY this test's own cookies
+        // on its synthetic origin (expire by name). A global removeAllCookies here would wipe the shared
+        // E2E TREK session and force a re-login, which the live server's rate limit punishes.
         instrumentation.runOnMainSync {
             cookieManager = CookieManager.getInstance()
-        }
-        // Clear any cookies left over from prior tests, awaiting the async callback.
-        val cleared = CountDownLatch(1)
-        instrumentation.runOnMainSync {
-            cookieManager.removeAllCookies { cleared.countDown() }
             cookieManager.setAcceptCookie(true)
-        }
-        if (!cleared.await(2, TimeUnit.SECONDS)) {
-            // Not fatal — flush below makes the clear effective even if the callback was slow.
-            instrumentation.runOnMainSync { cookieManager.flush() }
+            cookieManager.setCookie(ORIGIN, "auth=; Max-Age=0; Path=/")
+            cookieManager.setCookie(ORIGIN, "sess=; Max-Age=0; Path=/")
+            cookieManager.flush()
         }
     }
 

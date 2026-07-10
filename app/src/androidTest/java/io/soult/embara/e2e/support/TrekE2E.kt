@@ -1,13 +1,13 @@
 package io.soult.embara.e2e.support
 
 import android.app.Instrumentation
-import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
 import io.soult.embara.MainActivity
+import org.json.JSONObject
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.AssumptionViolatedException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -15,11 +15,27 @@ import java.util.concurrent.TimeUnit
  * Shared driver for TREK E2E journeys, so the login flow + WebView plumbing live in one place.
  *
  * Provides: reflection into MainActivity's private WebView / SwipeRefreshLayout; a main-thread
- * evaluateJavascript bridge for state polling; TREK login delegated to [TrekLoginPage] (Espresso-Web /
- * WebDriver atoms — the password is never logged, returned, or read back); and the app-behavioral
- * "reached the authenticated dashboard" signal (MainActivity enables pull-to-refresh only on dashboard
- * routes, and the login form disappears on a real login). WebView / SwipeRefreshLayout access is
+ * evaluateJavascript bridge for state polling; TREK login (fields set via the WebView JS engine, submit
+ * clicked via Espresso-Web — the password is never logged, returned, or read back); and the app-behavioral
+ * "reached the authenticated dashboard" signal (off /login AND the login form gone AND real content
+ * rendered AND MainActivity's dashboard pull-to-refresh enabled). WebView / SwipeRefreshLayout access is
  * marshalled to the main thread.
+ *
+ * SINGLE-LOGIN INVARIANT — read before adding any E2E test OR any cookie test:
+ * The whole instrumented suite shares ONE authenticated TREK session — the first authenticated test logs
+ * in, every later test reuses the live process-global CookieManager cookie (see [tryReachDashboard]'s
+ * SESSION REUSE). TREK rate-limits its login endpoint (5 attempts / 15 min per client IP), so even a few
+ * forced re-logins turn the suite red with what looks like an app failure. Keep that safety independent of
+ * incidental test/class ordering:
+ *   - Do NOT call CookieManager.removeAllCookies / removeSessionCookies (a global wipe) from an @Before,
+ *     @After, or @Test in this e2e package — a wipe interleaved with the e2e block destroys the shared
+ *     session mid-suite and forces re-logins.
+ *   - Cookie tests in io.soult.embara.* must scope their cleanup to their OWN cookies instead of a global
+ *     wipe — each in its own way: CookieAttributeMatchingTest relies on nonce'd names with no teardown,
+ *     CookiePersistenceTest clears its fixed names in @Before, CookieRestoreAndClearTest expires its
+ *     nonce'd names in @After. The only sanctioned global clears are the two in CookieRestoreAndClearTest
+ *     whose SUBJECT is the global API itself — a bounded ≤2 wipes that stay under the login budget
+ *     regardless of ordering.
  */
 class TrekE2E(private val instrumentation: Instrumentation) {
 
@@ -36,12 +52,8 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         // briefly unmounts the password field while still on /login, which would otherwise read as a
         // false "dashboard reached". Being off /login closes that hole.
         const val LOGIN_PATH = "/login"
-    }
-
-    fun clearCookies() {
-        val cm = CookieManager.getInstance()
-        cm.removeAllCookies(null)
-        cm.flush()
+        // Short window to confirm the app is NOT (yet) reporting authenticated while the login form shows.
+        const val LOGGED_OUT_SIGNAL_TIMEOUT_MS = 2_500L
     }
 
     fun webViewOf(scenario: ActivityScenario<MainActivity>): WebView {
@@ -94,14 +106,21 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     }
 
     /**
-     * Fills the login form and submits via [TrekLoginPage] (Espresso-Web / WebDriver atoms, with
-     * built-in synchronization and resilient semantic selectors). Throws if the form can't be driven;
-     * the password never appears in any error or log.
+     * Fills TREK's login form and submits. The values are set the React-correct way (native value setter
+     * + 'input' event — Espresso-Web webKeys doesn't update React's controlled inputs here), then the real
+     * Sign In button is clicked via Espresso-Web. Throws generically if the fields can't be populated; the
+     * password only reaches the WebView JS engine and never appears in a log, return value, or message.
      */
-    fun signIn(userEmail: String, password: String) = TrekLoginPage.signIn(userEmail, password)
+    private fun signIn(webView: WebView, userEmail: String, password: String) {
+        val emailLit = JSONObject.quote(userEmail)
+        val passLit = JSONObject.quote(password)
+        val filled = evalJs(webView, TrekLoginPage.fillFormJs(emailLit, passLit)).trim('"') == "true"
+        if (!filled) throw AssertionError("Failed to populate the TREK login form fields.")
+        TrekLoginPage.clickSignIn()
+    }
 
     /** Non-secret: the current route path only (never the full URL / query / token). */
-    fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
+    private fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
 
     /** Whether the WebView is currently on the TREK login route (segment-anchored, not a prefix match). */
     private fun onLoginRoute(webView: WebView): Boolean {
@@ -128,9 +147,33 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         return false
     }
 
-    /** Single-shot check: authenticated dashboard == off /login AND login form gone AND PTR enabled. */
+    /**
+     * Whether the SPA has actually rendered a content page — NOT the empty boot shell. Right after load
+     * the app briefly sits at "/" with an empty body (bodyLen ~31, zero interactive elements) before it
+     * routes to dashboard-vs-login; that shell is off /login with no password field, so without this the
+     * gate false-positives as "authenticated" and a throttled login masquerades as success (then bounces
+     * to /login on the next launch). Real content == any visible interactive/landmark element or text.
+     */
+    private fun hasRenderedContent(webView: WebView): Boolean {
+        val js = """
+            (function(){
+              try {
+                var n = document.querySelectorAll('a[href],button,[role=button],[role=link],[role=tab],nav,main,[role=main]').length;
+                var t = (document.body && document.body.innerText || '').trim().length;
+                return String(n > 0 || t > 40);
+              } catch(e){ return 'false'; }
+            })()
+        """.trimIndent()
+        return evalJs(webView, js).trim('"') == "true"
+    }
+
+    /**
+     * Single-shot check: authenticated dashboard == off /login AND login form gone AND the SPA has
+     * rendered real content (not the empty boot shell) AND MainActivity's dashboard pull-to-refresh is on.
+     */
     private fun isAuthenticatedDashboard(webView: WebView, swipeRefresh: SwipeRefreshLayout): Boolean {
         if (onLoginRoute(webView) || loginFormPresent(webView)) return false
+        if (!hasRenderedContent(webView)) return false
         val enabled = arrayOf(false)
         instrumentation.runOnMainSync { enabled[0] = swipeRefresh.isEnabled }
         return enabled[0]
@@ -139,8 +182,7 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     /**
      * Reaches the authenticated dashboard and returns the (WebView, SwipeRefreshLayout) pair, or `null`
      * if it couldn't within the attempts (no login form ever appeared, or login never reached an
-     * off-/login dashboard). Callers pick the failure policy: [loginAndReachDashboard] asserts,
-     * [loginAndReachDashboardOrSkip] skips.
+     * off-/login dashboard). [loginAndReachDashboard] turns a null into a test failure.
      *
      * SESSION REUSE: if a prior test in the process already authenticated (its cookies weren't cleared),
      * the app auto-lands on the dashboard and this returns WITHOUT logging in again — keeping the
@@ -168,10 +210,20 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         // Neither an authenticated dashboard nor a login form to act on — can't establish a session.
         if (!sawLoginForm) return null
 
+        // Non-tautology proof, folded into the one real login: the SAME authenticated-dashboard signal
+        // MUST read false while the login form is showing. This replaces a separate wrong-password test —
+        // a wrong PASSWORD is TREK's server behavior, not embara's, and every extra login round-trip risks
+        // the server's rate limit. A false-positive here would mean the positive assertion proves nothing.
+        assertFalse(
+            "The authenticated-dashboard signal was TRUE while the login form was still showing — the " +
+                "success signal is a tautology and cannot prove a real login.",
+            waitForAuthenticatedDashboard(webView, swipeRefresh, LOGGED_OUT_SIGNAL_TIMEOUT_MS),
+        )
+
         repeat(LOGIN_ATTEMPTS) { attempt ->
             val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
             try {
-                signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
+                signIn(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
             } catch (e: Throwable) {
                 // A transient Espresso element-resolution hiccup shouldn't abort the flow; retry unless
                 // this was the last attempt, in which case surface the real failure.
@@ -201,49 +253,6 @@ class TrekE2E(private val instrumentation: Instrumentation) {
             "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts. The live " +
                 "TREK test server may be throttling repeated logins, or no login form appeared.",
         )
-
-    /**
-     * Reaches the authenticated dashboard or SKIPS the test (JUnit assumption) — for tests whose subject
-     * is NOT authentication (e.g. navigation). Login throttling on the shared live TREK server then greys
-     * the test out instead of redding the build; the auth tests ([EmbaraAuthE2ETest]) stay the hard
-     * guardians of login itself, so a genuine login regression is still caught there.
-     */
-    fun loginAndReachDashboardOrSkip(
-        scenario: ActivityScenario<MainActivity>,
-    ): Pair<WebView, SwipeRefreshLayout> =
-        tryReachDashboard(scenario) ?: throw AssumptionViolatedException(
-            "Skipped: could not establish an authenticated TREK session (likely login throttling on the " +
-                "shared test server).",
-        )
-
-    /**
-     * The route (pathname[+hash]) of the first visible, same-origin in-app `<a>` nav link whose target
-     * differs from the current route — discovered from the live DOM so no nav label is hard-coded — or
-     * "" when the dashboard exposes no such anchor (e.g. button-driven nav). Structure only: a route
-     * path, never a full URL / query / token.
-     */
-    fun firstInAppNavTarget(webView: WebView): String {
-        val js = """
-            (function(){
-              try {
-                var here = location.pathname + location.hash;
-                var as = document.querySelectorAll('a[href]');
-                for (var i=0;i<as.length;i++){
-                  var a=as[i];
-                  if (a.offsetParent===null) continue;
-                  var u=new URL(a.href, location.origin);
-                  if (u.origin!==location.origin) continue;
-                  var t=u.pathname+u.hash;
-                  if (t===here) continue;
-                  if (t.indexOf('$LOGIN_PATH')===0) continue;
-                  return t;
-                }
-                return '';
-              } catch(e){ return ''; }
-            })()
-        """.trimIndent()
-        return evalJs(webView, js).trim('"')
-    }
 
     /**
      * SwipeRefreshLayout.canChildScrollUp() on the main thread — the pull-to-refresh guard's decision:

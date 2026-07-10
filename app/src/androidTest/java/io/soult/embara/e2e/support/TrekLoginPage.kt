@@ -1,23 +1,21 @@
 package io.soult.embara.e2e.support
 
 import androidx.test.espresso.web.sugar.Web.onWebView
-import androidx.test.espresso.web.webdriver.DriverAtoms.clearElement
 import androidx.test.espresso.web.webdriver.DriverAtoms.findElement
 import androidx.test.espresso.web.webdriver.DriverAtoms.webClick
-import androidx.test.espresso.web.webdriver.DriverAtoms.webKeys
 import androidx.test.espresso.web.webdriver.Locator
 
 /**
- * Page Object for TREK's login screen, driven with Espresso-Web — the official Android WebView test API
- * (WebDriver atoms) with built-in synchronization, so there are no hand-rolled `evaluateJavascript`
- * polls or `Thread.sleep`s here.
- *
- * Selectors use TREK's real hooks, verified by an on-device DOM audit: the email and password fields by
- * their semantic input TYPE, and the submit control by `type=submit` (its accessible name is "Sign In").
- * TREK exposes no id/name/data-testid on the login form, so these semantic selectors are the most stable
- * available — the standards order (Testing Library / Playwright): prefer role/semantics over structure,
- * never position/nth-child. Keeping every login selector in this one class means a TREK change is a
+ * Page Object for TREK's login screen. Selectors are TREK's real semantic hooks (email/password by input
+ * TYPE, submit by `type=submit`) — the standards order (Testing Library / Playwright): role/semantics
+ * over structure, never position/nth-child. Keeping the login selectors here means a TREK change is a
  * one-place update.
+ *
+ * FILL vs CLICK: TREK's login inputs are REACT-CONTROLLED (`value={state} onChange`). Espresso-Web's
+ * `webKeys` sends key events that React's onChange does NOT pick up here — the fields end up empty and
+ * TREK's own validation ("Email and password are required") blocks the submit. So the VALUE is set the
+ * React-correct way (native value setter + an 'input' event, see [fillFormJs], run via the WebView), and
+ * only the real submit CLICK stays on Espresso-Web.
  */
 object TrekLoginPage {
 
@@ -26,23 +24,29 @@ object TrekLoginPage {
     private const val SUBMIT = "button[type=submit]"
 
     /**
-     * Types the credentials into the login form and submits. Espresso-Web auto-synchronizes on each
-     * element, so no explicit waits are needed. The PASSWORD is never surfaced: if entering it fails,
-     * the error is re-thrown generically so no Espresso message can carry the value into the report.
+     * JS that fills the login inputs the way React registers a change: the native HTMLInputElement value
+     * setter, then an 'input' (+ 'change') event so React's onChange runs. [emailLit]/[passLit] MUST be
+     * JS string literals (quoted, e.g. via JSONObject.quote). Returns "true"/"false". The password only
+     * reaches the WebView's JS engine — it is never logged, returned, or put in a failure message.
      */
-    fun signIn(email: String, password: String) {
-        onWebView()
-            .withElement(findElement(Locator.CSS_SELECTOR, EMAIL))
-            .perform(clearElement())
-            .perform(webKeys(email))
-        try {
-            onWebView()
-                .withElement(findElement(Locator.CSS_SELECTOR, PASSWORD))
-                .perform(clearElement())
-                .perform(webKeys(password))
-        } catch (_: RuntimeException) {
-            throw AssertionError("Failed to enter the password into the TREK login form.")
-        }
+    fun fillFormJs(emailLit: String, passLit: String): String = """
+        (function(){
+          function set(sel, val){
+            var el = document.querySelector(sel);
+            if (!el) return false;
+            var d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value');
+            (d && d.set ? d.set : function(v){ el.value = v; }).call(el, val);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          }
+          try { return String(set('$EMAIL', $emailLit) && set('$PASSWORD', $passLit)); }
+          catch (e) { return 'false'; }
+        })()
+    """.trimIndent()
+
+    /** Clicks the Sign In button via Espresso-Web (a real click that drives the SPA's submit handler). */
+    fun clickSignIn() {
         onWebView()
             .withElement(findElement(Locator.CSS_SELECTOR, SUBMIT))
             .perform(webClick())
