@@ -37,11 +37,6 @@ android {
             creds["SERVER_URL"]?.let { testInstrumentationRunnerArguments["e2eServerUrl"] = it }
             creds["TREK_USER"]?.let { testInstrumentationRunnerArguments["e2eUserEmail"] = it }
             creds["TREK_PASS"]?.let { testInstrumentationRunnerArguments["e2ePassword"] = it }
-            // TEMP: forward creds to JVM unit tests too, for the TrekLoginProbe diagnostic (host egress).
-            project.tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
-                creds["TREK_USER"]?.let { systemProperty("trekUser", it) }
-                creds["TREK_PASS"]?.let { systemProperty("trekPass", it) }
-            }
         } else {
             project.logger.lifecycle(
                 "E2E creds ${credsPath.path}: not visible to the build " +

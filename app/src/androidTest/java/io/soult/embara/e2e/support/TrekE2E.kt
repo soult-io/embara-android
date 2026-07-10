@@ -37,11 +37,6 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         const val LOGIN_PATH = "/login"
         // Short window to confirm the app is NOT (yet) reporting authenticated while the login form shows.
         const val LOGGED_OUT_SIGNAL_TIMEOUT_MS = 2_500L
-
-        // DIAGNOSTIC: process-wide count of real login-form submissions, to see how many login-endpoint
-        // hits the whole suite actually makes.
-        @Volatile
-        var signInSubmissions = 0
     }
 
     fun webViewOf(scenario: ActivityScenario<MainActivity>): WebView {
@@ -201,7 +196,6 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         repeat(LOGIN_ATTEMPTS) { attempt ->
             val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
             try {
-                signInSubmissions++
                 signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
             } catch (e: Throwable) {
                 // A transient Espresso element-resolution hiccup shouldn't abort the flow; retry unless
@@ -229,9 +223,8 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         scenario: ActivityScenario<MainActivity>,
     ): Pair<WebView, SwipeRefreshLayout> =
         tryReachDashboard(scenario) ?: throw AssertionError(
-            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts " +
-                "[suite signInSubmissions=$signInSubmissions]. The live TREK test server may be " +
-                "throttling repeated logins, or no login form appeared.",
+            "Login did not reach the authenticated dashboard after $LOGIN_ATTEMPTS attempts. The live " +
+                "TREK test server may be throttling repeated logins, or no login form appeared.",
         )
 
     /**
