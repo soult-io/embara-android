@@ -89,11 +89,18 @@ class TrekE2E(private val instrumentation: Instrumentation) {
     }
 
     /**
-     * Fills the login form and submits via [TrekLoginPage] (Espresso-Web / WebDriver atoms, with
-     * built-in synchronization and resilient semantic selectors). Throws if the form can't be driven;
-     * the password never appears in any error or log.
+     * Fills TREK's login form and submits. The values are set the React-correct way (native value setter
+     * + 'input' event — Espresso-Web webKeys doesn't update React's controlled inputs here), then the real
+     * Sign In button is clicked via Espresso-Web. Throws generically if the fields can't be populated; the
+     * password only reaches the WebView JS engine and never appears in a log, return value, or message.
      */
-    fun signIn(userEmail: String, password: String) = TrekLoginPage.signIn(userEmail, password)
+    fun signIn(webView: WebView, userEmail: String, password: String) {
+        val emailLit = org.json.JSONObject.quote(userEmail)
+        val passLit = org.json.JSONObject.quote(password)
+        val filled = evalJs(webView, TrekLoginPage.fillFormJs(emailLit, passLit)).trim('"') == "true"
+        if (!filled) throw AssertionError("Failed to populate the TREK login form fields.")
+        TrekLoginPage.clickSignIn()
+    }
 
     /** Non-secret: the current route path only (never the full URL / query / token). */
     fun currentPath(webView: WebView): String = evalJs(webView, "String(location.pathname)").trim('"')
@@ -196,7 +203,7 @@ class TrekE2E(private val instrumentation: Instrumentation) {
         repeat(LOGIN_ATTEMPTS) { attempt ->
             val lastAttempt = attempt == LOGIN_ATTEMPTS - 1
             try {
-                signIn(E2EConfig.userEmail!!, E2EConfig.password!!)
+                signIn(webView, E2EConfig.userEmail!!, E2EConfig.password!!)
             } catch (e: Throwable) {
                 // A transient Espresso element-resolution hiccup shouldn't abort the flow; retry unless
                 // this was the last attempt, in which case surface the real failure.
