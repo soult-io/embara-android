@@ -3,6 +3,9 @@
 A plain-language history of changes. For the latest version's store text, see the
 "What's new" section on Google Play.
 
+## 1.3.1
+- Updated the Android build tools and libraries under the hood. No changes to how the app looks or works.
+
 ## 1.3.0
 - **Smooth dashboard scrolling.** Fixed pull-to-refresh getting in the way when you scroll
   the dashboard — it now only triggers when you're already at the top, so scrolling stays
