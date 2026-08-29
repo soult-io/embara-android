@@ -134,7 +134,11 @@ class WebViewCapabilityWiringTest {
 
     private fun assertOverridden(methodName: String) {
         withMainActivityWebView { webView ->
-            val client = webView.webChromeClient
+            // WebView is thread-affine: every one of its methods, getters included, must be called
+            // on the thread that created it.
+            val holder = arrayOfNulls<android.webkit.WebChromeClient>(1)
+            instrumentation.runOnMainSync { holder[0] = webView.webChromeClient }
+            val client = holder[0]
             assertNotNull("MainActivity installed no WebChromeClient", client)
             val declared = client!!.javaClass.declaredMethods.any { it.name == methodName }
             assertTrue(
