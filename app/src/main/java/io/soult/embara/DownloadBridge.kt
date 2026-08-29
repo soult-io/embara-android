@@ -168,9 +168,15 @@ class DownloadBridge(
         }
     }
 
-    /** Called when the activity goes away, so a queued legacy save can't fire into a dead window. */
+    /**
+     * Called when the activity goes away. Releases the queued legacy save so it can't fire into a
+     * dead window, and shuts the writer down — its thread is non-daemon and holds this bridge, which
+     * holds the Activity, so leaving it parked leaks both on every recreation. `shutdown()` lets an
+     * in-flight write finish rather than truncating a file.
+     */
     fun cancelPending() {
         pendingLegacySave = null
+        writeExecutor.shutdown()
     }
 
     /**
@@ -202,6 +208,11 @@ class DownloadBridge(
                 fail(R.string.download_failed)
                 return
             }
+            // Captured here, on the JavaBridge thread, so the UI-thread half below can prove it is
+            // still acting for the SAME document. onNewDocument() rotates on every main-frame
+            // navigation, so a call that raced a navigation fails closed with no extra state.
+            val callingNonce = pageNonce
+
             val name = DownloadNaming.sanitize(suggestedName, extensionFor(mimeType))
             if (DownloadNaming.isInstallable(name, mimeType)) {
                 // DownloadManager refuses to hand an app an installable file without going through
@@ -212,6 +223,10 @@ class DownloadBridge(
                 return
             }
             activity.runOnUiThread {
+                // The nonce was checked against the document that CALLED; the host is read now. A
+                // navigation can commit between the two, which would otherwise let an error page or
+                // any other document's live hook borrow the next document's host check.
+                if (pageNonce != callingNonce) return@runOnUiThread
                 if (!UrlValidator.isSameServerHost(serverHost(), pageUrl())) {
                     toast(R.string.download_failed)
                     return@runOnUiThread
@@ -354,8 +369,13 @@ class DownloadBridge(
 
         private const val NONCE_BYTES = 16
 
-        /** ~24 MB of payload once base64-decoded. Guards the single-string JS bridge hop. */
-        const val MAX_BASE64_LENGTH = 32 * 1024 * 1024
+        /**
+         * Guards the single-string JS bridge hop, kept in step with [MAX_BLOB_BYTES] rather than
+         * generously above it: the JS-side limit is advisory, and WebKit materialises the whole
+         * string as UTF-16 during marshalling — BEFORE saveBase64 is entered, so the try/catch
+         * around the decode cannot catch an OutOfMemoryError raised there.
+         */
+        const val MAX_BASE64_LENGTH = MAX_BLOB_BYTES / 3 * 4 + 1024
 
         /**
          * Matched by the JS-side blob.size check, so an oversized blob is refused before it is read.

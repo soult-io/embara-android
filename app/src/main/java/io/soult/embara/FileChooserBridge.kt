@@ -46,8 +46,9 @@ class FileChooserBridge {
     fun register(activity: ComponentActivity) {
         appContext = activity.applicationContext
         // Captures from an earlier run: the camera writes into our cache, and nothing else ever
-        // removes them.
-        sweepStaleCaptures(activity)
+        // removes them. Off the main thread — this is a directory listing plus deletes.
+        val context = activity.applicationContext
+        Thread({ sweepStaleCaptures(context) }, "embara-capture-sweep").start()
         launcher = activity.registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -128,9 +129,13 @@ class FileChooserBridge {
         val ownAuthority = appContext?.let { "${it.packageName}.fileprovider" }
         val kept = uris.filter { uri ->
             val scheme = uri.scheme?.lowercase()
+            // ContentResolver strips a leading "<userId>@" before it looks the provider up, so the
+            // comparison has to strip it too. "content://0@io.soult.embara.fileprovider/..." is not
+            // equal to our authority as a string but resolves to our provider all the same.
+            val authority = uri.authority?.substringAfterLast('@')
             when {
                 scheme != ContentResolver.SCHEME_CONTENT -> false
-                uri.authority == ownAuthority -> uri == pendingCameraOutput
+                authority == ownAuthority -> uri == pendingCameraOutput
                 else -> true
             }
         }
