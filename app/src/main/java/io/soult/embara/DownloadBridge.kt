@@ -370,20 +370,20 @@ class DownloadBridge(
         private const val NONCE_BYTES = 16
 
         /**
-         * Guards the single-string JS bridge hop, kept in step with [MAX_BLOB_BYTES] rather than
-         * generously above it: the JS-side limit is advisory, and WebKit materialises the whole
-         * string as UTF-16 during marshalling — BEFORE saveBase64 is entered, so the try/catch
-         * around the decode cannot catch an OutOfMemoryError raised there.
-         */
-        const val MAX_BASE64_LENGTH = MAX_BLOB_BYTES / 3 * 4 + 1024
-
-        /**
          * Matched by the JS-side blob.size check, so an oversized blob is refused before it is read.
          * Deliberately modest: everything TREK 4.0.0 hands a phone this way is a text export (MFA
          * codes, .ics, .gpx), and the path costs roughly six times the payload in peak memory
          * across the renderer and the bridge hop.
          */
         const val MAX_BLOB_BYTES = 8 * 1024 * 1024
+
+        /**
+         * Guards the single-string JS bridge hop, kept in step with [MAX_BLOB_BYTES] rather than
+         * generously above it: the JS-side limit is advisory, and WebKit materialises the whole
+         * string as UTF-16 during marshalling — BEFORE saveBase64 is entered, so the try/catch
+         * around the decode cannot catch an OutOfMemoryError raised there.
+         */
+        const val MAX_BASE64_LENGTH = MAX_BLOB_BYTES / 3 * 4 + 1024
 
         /** Total a single document may write, however many downloads it splits it across. */
         const val MAX_BYTES_PER_PAGE = 128L * 1024 * 1024
