@@ -247,15 +247,59 @@ class DownloadBridge(
         /**
          * Injected on every page load. TREK's mobile exports (MFA backup codes, trip .ics/.gpx)
          * build a `blob:` url and click a synthetic `<a download>`; WebKit's DownloadListener is
-         * never told about those, and DownloadManager could not fetch them anyway. A capture-phase
-         * click listener catches the anchor first, reads the blob through a FileReader and hands
-         * the bytes to [JsInterface]. Only `blob:`/`data:` anchors are touched — ordinary links and
-         * http(s) downloads take their normal path. Idempotent per document via
+         * never told about those, and DownloadManager could not fetch them anyway.
+         *
+         * The bytes are taken from the Blob the page already holds, captured as it mints the object
+         * url. Reading them back through `fetch(blobUrl)` looks simpler and does not work: TREK
+         * serves a `connect-src` Content-Security-Policy that does not list `blob:`, so the page
+         * refuses its own object url ("Refused to connect because it violates the document's
+         * Content Security Policy") and the download fails silently a second way. Nothing here
+         * touches the network.
+         *
+         * Only `blob:`/`data:` anchors are intercepted — ordinary links and http(s) downloads take
+         * their normal path into the DownloadListener. Idempotent per document via
          * window.__embaraDlHooked, and wrapped so a page quirk can never break the click.
          */
         const val BLOB_DOWNLOAD_HOOK_JS = """
             (function(){
               if (window.__embaraDlHooked) return; window.__embaraDlHooked = true;
+
+              // Bounded so a page that mints object urls freely (the map layers do) cannot make
+              // this retain blobs indefinitely; revoking drops the entry immediately.
+              var MAX_TRACKED = 16;
+              var blobs = new Map();
+              try {
+                var createUrl = URL.createObjectURL.bind(URL);
+                var revokeUrl = URL.revokeObjectURL.bind(URL);
+                URL.createObjectURL = function(obj){
+                  var u = createUrl(obj);
+                  try {
+                    if (typeof Blob !== 'undefined' && obj instanceof Blob) {
+                      blobs.set(u, obj);
+                      while (blobs.size > MAX_TRACKED) { blobs.delete(blobs.keys().next().value); }
+                    }
+                  } catch (_) {}
+                  return u;
+                };
+                URL.revokeObjectURL = function(u){
+                  try { blobs.delete(u); } catch (_) {}
+                  return revokeUrl(u);
+                };
+              } catch (_) {}
+
+              function deliver(name, blob){
+                try {
+                  var fr = new FileReader();
+                  fr.onloadend = function(){
+                    var s = String(fr.result), i = s.indexOf(',');
+                    if (i < 0) { AndroidDownloadBridge.reportFailure(); return; }
+                    AndroidDownloadBridge.saveBase64(name, blob.type || '', s.slice(i + 1));
+                  };
+                  fr.onerror = function(){ AndroidDownloadBridge.reportFailure(); };
+                  fr.readAsDataURL(blob);
+                } catch (_) { AndroidDownloadBridge.reportFailure(); }
+              }
+
               document.addEventListener('click', function(e){
                 try {
                   var n = e.target, a = null;
@@ -265,19 +309,25 @@ class DownloadBridge(
                   }
                   if (!a) return;
                   var href = a.getAttribute('href') || '';
-                  if (!/^(blob:|data:)/i.test(href)) return;
-                  e.preventDefault();
                   var name = a.getAttribute('download') || '';
-                  fetch(href).then(function(r){ return r.blob(); }).then(function(b){
-                    var fr = new FileReader();
-                    fr.onloadend = function(){
-                      var s = String(fr.result), i = s.indexOf(',');
-                      if (i < 0) { AndroidDownloadBridge.reportFailure(); return; }
-                      AndroidDownloadBridge.saveBase64(name, b.type || '', s.slice(i + 1));
-                    };
-                    fr.onerror = function(){ AndroidDownloadBridge.reportFailure(); };
-                    fr.readAsDataURL(b);
-                  }).catch(function(){ AndroidDownloadBridge.reportFailure(); });
+                  if (/^blob:/i.test(href)) {
+                    e.preventDefault();
+                    var b = blobs.get(href);
+                    if (!b) { AndroidDownloadBridge.reportFailure(); return; }
+                    deliver(name, b);
+                  } else if (/^data:/i.test(href)) {
+                    e.preventDefault();
+                    var comma = href.indexOf(',');
+                    if (comma < 0) { AndroidDownloadBridge.reportFailure(); return; }
+                    var meta = href.slice(5, comma);
+                    var mime = meta.split(';')[0] || 'application/octet-stream';
+                    var body = href.slice(comma + 1);
+                    if (/;base64/i.test(meta)) {
+                      AndroidDownloadBridge.saveBase64(name, mime, body);
+                    } else {
+                      deliver(name, new Blob([decodeURIComponent(body)], {type: mime}));
+                    }
+                  }
                 } catch (_) {}
               }, true);
             })();

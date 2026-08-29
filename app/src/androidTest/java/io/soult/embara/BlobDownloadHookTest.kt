@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit
  * Embara had no DownloadListener at all.
  *
  * The markup here reproduces that shape rather than TREK's own code, so the test stays hermetic
- * (no server, no login) while exercising the exact path.
+ * (no server, no login) while exercising the exact path — including TREK's `connect-src` CSP, which
+ * is what makes the obvious implementation (fetch the object url back) fail on the real page.
  */
 @RunWith(AndroidJUnit4::class)
 class BlobDownloadHookTest {
@@ -45,7 +46,15 @@ class BlobDownloadHookTest {
         const val FILENAME = "trek-mfa-backup-codes.txt"
 
         val HTML = """
-            <!doctype html><html><head><meta charset="utf-8"></head><body>
+            <!doctype html><html><head><meta charset="utf-8">
+            <!--
+              TREK serves a connect-src CSP that does NOT list blob:. Reproduce it here, because a
+              hook that reads the blob back with fetch() passes without it and is refused by the
+              real page ("Refused to connect because it violates the document's Content Security
+              Policy") — which is exactly how this was missed the first time.
+            -->
+            <meta http-equiv="Content-Security-Policy" content="connect-src 'self'">
+            </head><body>
             <script>
               function blobDownload(name, text, type) {
                 var b = new Blob([text], {type: type});
