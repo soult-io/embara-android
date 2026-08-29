@@ -512,7 +512,9 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         // file-chooser callback permanently jams that input, so both are released here.
         geolocationBridge.cancelPending()
         fileChooserBridge.cancelPending()
-        downloadBridge.cancelPending()
+        // onCreate returns early (before the bridges are built) when no server is configured and it
+        // hands off to SetupActivity, so this activity can be destroyed without one ever existing.
+        if (::downloadBridge.isInitialized) downloadBridge.cancelPending()
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
