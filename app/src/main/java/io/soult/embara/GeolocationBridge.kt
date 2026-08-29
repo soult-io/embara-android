@@ -48,7 +48,7 @@ class GeolocationBridge(private val serverHost: () -> String) {
 
         // A frame from anywhere other than the user's own server never gets the device's position,
         // whatever it asks for.
-        if (!UrlValidator.isSameServerOrigin(serverHost(), origin)) {
+        if (!UrlValidator.isSameServerHost(serverHost(), origin)) {
             callback.invoke(origin.orEmpty(), false, false)
             return
         }
@@ -69,9 +69,15 @@ class GeolocationBridge(private val serverHost: () -> String) {
 
         pendingOrigin = allowedOrigin
         pendingCallback = callback
-        target.launch(
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-        )
+        try {
+            target.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        } catch (_: Exception) {
+            // An unregistered or torn-down launcher throws. Answer rather than leaving WebKit
+            // holding a callback nothing will ever complete.
+            respond(granted = false)
+        }
     }
 
     /** Answers (and clears) an in-flight prompt. Safe to call when nothing is pending. */

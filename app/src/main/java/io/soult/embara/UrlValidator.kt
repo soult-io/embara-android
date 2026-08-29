@@ -24,17 +24,21 @@ object UrlValidator {
         input.isNullOrBlank()
 
     /**
-     * Whether [origin] belongs to the configured TREK server — the same host, or a subdomain of it,
-     * over http/https. Mirrors the host rule MainActivity's shouldOverrideUrlLoading uses, so a
-     * capability granted to the page (geolocation, downloads) can never be claimed by a third-party
-     * frame or a redirected origin.
+     * Whether [url] is served by the configured TREK server — the same host, or a subdomain of it,
+     * over http/https.
      *
-     * [origin] is what WebKit hands to onGeolocationPermissionsShowPrompt: a scheme://host[:port]
-     * string with no path. A blank server host or an unparseable origin is never a match.
+     * This is a HOST check, not a web-origin check: scheme and port are deliberately not compared,
+     * because it has to give the same answer as the navigation gate in MainActivity's
+     * shouldOverrideUrlLoading, which is host-only. A second service on another port of the same
+     * host therefore counts as the server. Named for what it does so the weaker guarantee is not
+     * mistaken for an origin comparison.
+     *
+     * [url] may be a full URL or the scheme://host[:port] form WebKit passes to
+     * onGeolocationPermissionsShowPrompt. A blank server host or an unparseable url never matches.
      */
-    fun isSameServerOrigin(serverHost: String, origin: String?): Boolean {
-        if (serverHost.isBlank() || origin.isNullOrBlank()) return false
-        val uri = Uri.parse(origin)
+    fun isSameServerHost(serverHost: String, url: String?): Boolean {
+        if (serverHost.isBlank() || url.isNullOrBlank()) return false
+        val uri = Uri.parse(url)
         val scheme = uri.scheme?.lowercase()
         if (scheme != "https" && scheme != "http") return false
         val host = uri.host?.lowercase() ?: return false

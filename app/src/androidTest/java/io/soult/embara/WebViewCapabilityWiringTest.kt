@@ -69,7 +69,7 @@ class WebViewCapabilityWiringTest {
         withMainActivityWebView { webView ->
             val loaded = CountDownLatch(1)
             instrumentation.runOnMainSync {
-                webView.evaluateJavascript(DownloadBridge.BLOB_DOWNLOAD_HOOK_JS) { loaded.countDown() }
+                webView.evaluateJavascript(DownloadBridge.hookJs("test-nonce")) { loaded.countDown() }
             }
             assertTrue(loaded.await(JS_RESULT_SECONDS, TimeUnit.SECONDS))
 

@@ -102,18 +102,49 @@ class DownloadNamingTest {
         assertEquals("a_b_c_d.txt", DownloadNaming.sanitize("a:b?c*d.txt"))
     }
 
-    // -- length --
+    @Test
+    fun `strips bidi and zero-width format characters`() {
+        // U+202E RIGHT-TO-LEFT OVERRIDE renders "photo<RLO>gnp.apk" as if it ended in .png in the
+        // Files app and the download notification. U+200B just hides differences between names.
+        assertEquals("photognp.apk", DownloadNaming.sanitize("photo\u202Egnp.apk"))
+        assertEquals("codes.txt", DownloadNaming.sanitize("co\u200Bdes.txt"))
+        assertEquals("codes.txt", DownloadNaming.sanitize("\u200Ecodes.txt\u202C"))
+    }
+
+    // -- length, measured in UTF-8 bytes because that is what the filesystem limits --
 
     @Test
     fun `truncates an over-long name but keeps its extension`() {
         val result = DownloadNaming.sanitize("x".repeat(400) + ".ics")
-        assertTrue(result.length <= 120)
+        assertTrue(result.toByteArray(Charsets.UTF_8).size <= 200)
         assertTrue("expected .ics to survive, got '$result'", result.endsWith(".ics"))
     }
 
     @Test
     fun `truncates an over-long name with no usable extension`() {
         val result = DownloadNaming.sanitize("y".repeat(400))
-        assertEquals(120, result.length)
+        assertEquals(200, result.toByteArray(Charsets.UTF_8).size)
+    }
+
+    @Test
+    fun `counts multi-byte characters as their utf-8 size`() {
+        // 150 CJK characters is 450 bytes of UTF-8 — well inside a 200-CHARACTER cap and well
+        // outside the 255-byte name limit the filesystem actually enforces.
+        val result = DownloadNaming.sanitize("\u65C5".repeat(150) + ".gpx")
+        assertTrue(
+            "expected <= 200 bytes, got ${result.toByteArray(Charsets.UTF_8).size}",
+            result.toByteArray(Charsets.UTF_8).size <= 200,
+        )
+        assertTrue(result.endsWith(".gpx"))
+    }
+
+    @Test
+    fun `never splits a surrogate pair when truncating`() {
+        val result = DownloadNaming.sanitize("\uD83D\uDE00".repeat(200))
+        assertTrue(result.toByteArray(Charsets.UTF_8).size <= 200)
+        assertFalse(
+            "truncation left a dangling surrogate",
+            result.isNotEmpty() && Character.isHighSurrogate(result.last()),
+        )
     }
 }

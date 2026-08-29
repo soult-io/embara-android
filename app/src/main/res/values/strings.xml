@@ -35,4 +35,5 @@
     <string name="download_saved">Saved to Downloads</string>
     <string name="download_failed">Download failed</string>
     <string name="download_too_large">File is too large to download</string>
+    <string name="file_pick_lost">Embara restarted while the picker was open, so the file wasn\'t attached. Try again.</string>
 </resources>

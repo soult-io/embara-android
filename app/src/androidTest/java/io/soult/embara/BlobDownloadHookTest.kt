@@ -15,7 +15,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Hermetic test for [DownloadBridge.BLOB_DOWNLOAD_HOOK_JS] — the riskiest new code, because it runs
+ * Hermetic test for [DownloadBridge.hookJs(NONCE)] — the riskiest new code, because it runs
  * inside every TREK page and has to catch a synthetic click without disturbing anything else.
  *
  * Both downloads TREK 4.0.0 exposes on a phone go through the same shape: build a Blob, call
@@ -44,6 +44,7 @@ class BlobDownloadHookTest {
 
         const val PAYLOAD = "code-1 code-2 code-3"
         const val FILENAME = "trek-mfa-backup-codes.txt"
+        const val NONCE = "0123456789abcdef0123456789abcdef"
 
         val HTML = """
             <!doctype html><html><head><meta charset="utf-8">
@@ -64,6 +65,18 @@ class BlobDownloadHookTest {
                 document.body.appendChild(a);
                 a.click();
                 setTimeout(function(){ URL.revokeObjectURL(u); a.remove(); }, 500);
+              }
+              function blobDownloadOfSize(name, size) {
+                var b = new Blob([new Uint8Array(1)], {type: 'application/octet-stream'});
+                // Report an oversized blob without allocating one: the hook reads .size, and a real
+                // 24 MB allocation in a test is slow and flaky on a headless emulator.
+                Object.defineProperty(b, 'size', {value: size});
+                var u = URL.createObjectURL(b);
+                var a = document.createElement('a');
+                a.href = u; a.download = name;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
               }
               function httpDownload(name) {
                 var a = document.createElement('a');
@@ -86,9 +99,12 @@ class BlobDownloadHookTest {
         @Volatile var failures = 0
         @Volatile var deliveries = 0
 
+        @Volatile var nonce: String? = null
+
         @JavascriptInterface
-        fun saveBase64(suggestedName: String?, mimeType: String?, base64: String?) {
+        fun saveBase64(nonce: String?, suggestedName: String?, mimeType: String?, base64: String?) {
             deliveries++
+            this.nonce = nonce
             this.name = suggestedName
             this.mimeType = mimeType
             this.base64 = base64
@@ -96,8 +112,9 @@ class BlobDownloadHookTest {
         }
 
         @JavascriptInterface
-        fun reportFailure() {
+        fun reportFailure(nonce: String?) {
             failures++
+            this.nonce = nonce
             delivered.countDown()
         }
 
@@ -123,6 +140,7 @@ class BlobDownloadHookTest {
             )
             val decoded = String(Base64.decode(recorder.base64!!, Base64.DEFAULT))
             assertEquals(PAYLOAD, decoded)
+            assertEquals("every call must carry this document's nonce", NONCE, recorder.nonce)
         } finally {
             destroy(webView)
         }
@@ -170,8 +188,8 @@ class BlobDownloadHookTest {
         try {
             // onPageFinished and doUpdateVisitedHistory can both fire for one view; the hook guards
             // itself with window.__embaraDlHooked so the listener is only ever attached once.
-            runJs(webView, DownloadBridge.BLOB_DOWNLOAD_HOOK_JS)
-            runJs(webView, DownloadBridge.BLOB_DOWNLOAD_HOOK_JS)
+            runJs(webView, DownloadBridge.hookJs(NONCE))
+            runJs(webView, DownloadBridge.hookJs(NONCE))
             val listeners = runJs(webView, "String(window.__embaraDlHooked === true)")
             assertEquals("\"true\"", listeners)
 
@@ -180,6 +198,29 @@ class BlobDownloadHookTest {
             Thread.sleep(NON_DELIVERY_SETTLE_MS)
             assertEquals(PAYLOAD, String(Base64.decode(recorder.base64!!, Base64.DEFAULT)))
             assertEquals("one click must produce exactly one delivery", 1, recorder.deliveries)
+        } finally {
+            destroy(webView)
+        }
+    }
+
+    /**
+     * The size limit has to bite in JS, before FileReader materialises the whole blob as a base64
+     * data url. Checking it only on the native side means the renderer has already made two full
+     * copies of the payload by the time anything can refuse it.
+     */
+    @Test
+    fun refusesAnOversizedBlobWithoutReadingIt() {
+        val recorder = Recorder()
+        val webView = createHookedWebView(recorder)
+        try {
+            val oversized = DownloadBridge.MAX_BLOB_BYTES + 1024
+            runJs(webView, "blobDownloadOfSize('big.bin', $oversized);")
+            assertTrue(
+                "an oversized blob must be refused, not silently dropped",
+                recorder.awaitDelivery(DELIVERY_TIMEOUT_SECONDS),
+            )
+            assertEquals("it must be refused, not delivered", 0, recorder.deliveries)
+            assertEquals(1, recorder.failures)
         } finally {
             destroy(webView)
         }
@@ -197,7 +238,7 @@ class BlobDownloadHookTest {
                 addJavascriptInterface(recorder, DownloadBridge.BRIDGE_NAME)
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
-                        view.evaluateJavascript(DownloadBridge.BLOB_DOWNLOAD_HOOK_JS) { loaded.countDown() }
+                        view.evaluateJavascript(DownloadBridge.hookJs(NONCE)) { loaded.countDown() }
                     }
                 }
             }

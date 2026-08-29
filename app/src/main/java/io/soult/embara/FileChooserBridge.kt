@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
+import android.widget.Toast
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import androidx.activity.ComponentActivity
@@ -38,8 +39,14 @@ class FileChooserBridge {
     private var launcher: ActivityResultLauncher<Intent>? = null
     private var pendingCallback: ValueCallback<Array<Uri>>? = null
     private var pendingCameraOutput: Uri? = null
+    private var pendingCameraFile: File? = null
+    private var appContext: Context? = null
 
     fun register(activity: ComponentActivity) {
+        appContext = activity.applicationContext
+        // Captures from an earlier run: the camera writes into our cache, and nothing else ever
+        // removes them.
+        sweepCaptures(activity)
         launcher = activity.registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
@@ -51,6 +58,12 @@ class FileChooserBridge {
                 // EXTRA_OUTPUT uri we handed it.
                 data == null && cameraOutput != null -> arrayOf(cameraOutput)
                 else -> WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+            }
+            if (pendingCallback == null && uris != null) {
+                // The activity was recreated (rotation, or a low-memory kill while the camera app
+                // was foregrounded) so the WebView that asked is gone and was already answered with
+                // null. Say so rather than dropping the user's photo in silence.
+                appContext?.let { Toast.makeText(it, R.string.file_pick_lost, Toast.LENGTH_LONG).show() }
             }
             deliver(uris)
         }
@@ -77,6 +90,7 @@ class FileChooserBridge {
         val contentIntent = params.createIntent()
         val camera = if (params.isCaptureEnabled) createCameraIntent(context) else null
         pendingCameraOutput = camera?.output
+        pendingCameraFile = camera?.file
 
         val chooser = Intent.createChooser(contentIntent, context.getString(R.string.file_chooser_title))
         if (camera != null) {
@@ -99,13 +113,32 @@ class FileChooserBridge {
     fun cancelPending() = deliver(null)
 
     private fun deliver(uris: Array<Uri>?) {
+        val cameraOutput = pendingCameraOutput
+        val cameraFile = pendingCameraFile
+        pendingCameraOutput = null
+        pendingCameraFile = null
+        // The capture file is created before the chooser opens, so it is left behind whenever the
+        // user picks the gallery instead or cancels. Only keep it when it IS the answer.
+        if (cameraFile != null && uris?.contains(cameraOutput) != true) {
+            runCatching { cameraFile.delete() }
+        }
         val callback = pendingCallback ?: return
         pendingCallback = null
-        pendingCameraOutput = null
         callback.onReceiveValue(uris)
     }
 
-    private class CameraCapture(val intent: Intent, val output: Uri)
+    /**
+     * Removes captures left behind by an earlier run — a process death between the camera app
+     * returning and the upload finishing leaves a full-resolution photo in the cache, and only
+     * storage pressure would ever reclaim it.
+     */
+    private fun sweepCaptures(context: Context) {
+        runCatching {
+            File(context.cacheDir, CAPTURE_DIR).listFiles()?.forEach { it.delete() }
+        }
+    }
+
+    private class CameraCapture(val intent: Intent, val output: Uri, val file: File)
 
     /**
      * ACTION_IMAGE_CAPTURE writing into our own cache via a FileProvider uri. No CAMERA permission
@@ -119,7 +152,12 @@ class FileChooserBridge {
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
             .putExtra(MediaStore.EXTRA_OUTPUT, output)
             .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        if (intent.resolveActivity(context.packageManager) == null) null else CameraCapture(intent, output)
+        if (intent.resolveActivity(context.packageManager) == null) {
+            file.delete()
+            null
+        } else {
+            CameraCapture(intent, output, file)
+        }
     } catch (_: Exception) {
         // No camera app, no room in the cache, or a misconfigured provider — fall back to the
         // content chooser alone rather than failing the whole request.

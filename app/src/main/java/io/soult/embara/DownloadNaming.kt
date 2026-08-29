@@ -13,11 +13,14 @@ package io.soult.embara
 object DownloadNaming {
 
     private const val FALLBACK = "download"
-    private const val MAX_LENGTH = 120
+
+    // Bytes, not characters: the limit that actually bites is the filesystem's 255-byte name limit,
+    // and 120 CJK or emoji characters is 360-480 bytes of UTF-8.
+    private const val MAX_BYTES = 200
 
     /**
      * Reduces [raw] to a single safe filename segment: no path separators, no traversal, no
-     * control characters, never blank, never longer than [MAX_LENGTH].
+     * control or format characters, never blank, never longer than [MAX_BYTES] of UTF-8.
      *
      * Any extension is preserved when one survives; [fallbackExtension] (without a dot) supplies
      * one otherwise, so a nameless `blob:` download still lands as something openable.
@@ -33,7 +36,11 @@ object DownloadNaming {
         val cleaned = buildString {
             for (c in leaf) {
                 when {
-                    c.isISOControl() -> Unit
+                    // isISOControl covers only C0/C1. The Cf (format) category is the one that
+                    // matters here: U+202E RIGHT-TO-LEFT OVERRIDE lets a page render
+                    // "photo<RLO>gnp.apk" as a .png in the Files app and the download notification,
+                    // and zero-width characters hide differences between two names entirely.
+                    c.isISOControl() || Character.getType(c) == Character.FORMAT.toInt() -> Unit
                     c in ILLEGAL -> append('_')
                     else -> append(c)
                 }
@@ -55,17 +62,42 @@ object DownloadNaming {
         return truncate(withExtension)
     }
 
-    /** Keeps the extension intact while trimming an over-long stem. */
+    /** Keeps the extension intact while trimming an over-long stem, measured in UTF-8 bytes. */
     private fun truncate(name: String): String {
-        if (name.length <= MAX_LENGTH) return name
+        if (utf8Length(name) <= MAX_BYTES) return name
         val dot = name.lastIndexOf('.')
-        if (dot <= 0 || name.length - dot > 12) return name.take(MAX_LENGTH)
-        val extension = name.substring(dot)
-        return name.take(MAX_LENGTH - extension.length) + extension
+        val extension = if (dot > 0 && utf8Length(name.substring(dot)) <= MAX_EXTENSION_BYTES) {
+            name.substring(dot)
+        } else {
+            ""
+        }
+        val stem = if (extension.isEmpty()) name else name.substring(0, dot)
+        return takeBytes(stem, MAX_BYTES - utf8Length(extension)) + extension
     }
+
+    /** Takes as much of [text] as fits in [limit] UTF-8 bytes, never splitting a code point. */
+    private fun takeBytes(text: String, limit: Int): String {
+        var bytes = 0
+        val out = StringBuilder()
+        var i = 0
+        while (i < text.length) {
+            val count = if (Character.isHighSurrogate(text[i]) && i + 1 < text.length) 2 else 1
+            val chunk = text.substring(i, i + count)
+            val size = utf8Length(chunk)
+            if (bytes + size > limit) break
+            out.append(chunk)
+            bytes += size
+            i += count
+        }
+        return out.toString().ifBlank { FALLBACK }
+    }
+
+    private fun utf8Length(text: String): Int = text.toByteArray(Charsets.UTF_8).size
 
     private fun sanitizeExtension(extension: String): String =
         extension.trimStart('.').filter { it.isLetterOrDigit() }.take(8).ifBlank { "bin" }
+
+    private const val MAX_EXTENSION_BYTES = 12
 
     /** Conservative set — covers Windows-illegal characters plus the ones that confuse shells. */
     private val ILLEGAL = charArrayOf('/', ' ', ':', '*', '?', '"', '<', '>', '|')

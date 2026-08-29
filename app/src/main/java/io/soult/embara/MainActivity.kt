@@ -88,7 +88,13 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         isShowingErrorPage = savedInstanceState?.getBoolean(KEY_ERROR_PAGE, false) ?: false
 
         // registerForActivityResult must be called before the activity reaches STARTED.
-        downloadBridge = DownloadBridge(activity = this, serverHost = { serverHost })
+        downloadBridge = DownloadBridge(
+            activity = this,
+            serverHost = { serverHost },
+            // The WebView's MAIN-frame url. The bridge checks it before writing, so a saveBase64
+            // call cannot outlive a navigation away from the server.
+            pageUrl = { if (::webView.isInitialized) webView.url else null },
+        )
         geolocationBridge.register(this)
         fileChooserBridge.register(this)
         downloadBridge.register()
@@ -320,6 +326,10 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             // "at top" until a scroll actually fires on the new page (the injected hook resets its
             // per-document dedupe flag automatically since window.__embaraPtrHooked is gone).
             ptrBridge.resetToTop()
+            // A new document invalidates the download hook's nonce; the replacement is injected in
+            // onPageFinished below. Deliberately not done on a SPA route change, which keeps the
+            // same document and the same already-injected hook.
+            downloadBridge.onNewDocument()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -329,8 +339,10 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             CookieManager.getInstance().flush()
             // Inject the capture-phase scroll listener that feeds ptrBridge (see ptrBridge / guard).
             view.evaluateJavascript(PTR_SCROLL_HOOK_JS, null)
-            // Inject the capture-phase blob/data download hook (see DownloadBridge).
-            view.evaluateJavascript(DownloadBridge.BLOB_DOWNLOAD_HOOK_JS, null)
+            // Inject the capture-phase blob/data download hook, carrying this document's nonce.
+            // evaluateJavascript targets the MAIN frame only, which is what scopes the bridge to a
+            // page Embara actually loaded rather than to any iframe it happens to embed.
+            view.evaluateJavascript(downloadBridge.currentHookJs(), null)
             // Only dismiss when fully loaded (not on intermediate redirects)
             if (view.progress >= 100) {
                 dismissRefreshSpinner()
