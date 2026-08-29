@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.File
@@ -247,6 +248,7 @@ class DownloadBridge(
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun writeViaMediaStore(name: String, mimeType: String?, bytes: ByteArray) {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
