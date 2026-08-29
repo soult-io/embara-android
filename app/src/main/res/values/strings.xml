@@ -30,4 +30,9 @@
     <string name="settings_about">About</string>
     <string name="settings_about_version">Embara for Android v%1$s</string>
     <string name="pull_to_refresh">Pull down to refresh page</string>
+    <string name="file_chooser_title">Choose a file</string>
+    <string name="download_started">Downloading\u2026</string>
+    <string name="download_saved">Saved to Downloads</string>
+    <string name="download_failed">Download failed</string>
+    <string name="download_too_large">File is too large to download</string>
 </resources>

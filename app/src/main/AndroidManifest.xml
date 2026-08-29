@@ -4,6 +4,29 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      TREK 4.0.0 asks the browser for a position from its "Use my current location" button and from
+      the mobile quick-capture sheet. WebKit only forwards that to the page once the app itself
+      holds a location permission, so it is requested at the moment the page asks and never before.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!--
+      Pre-scoped-storage only. From API 29 a download is written through MediaStore and needs no
+      permission at all; below that the public Downloads directory still does.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- Package visibility for resolving a camera app for capture-enabled file inputs. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -34,6 +57,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Hands the camera app a write target for a capture-enabled file input. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 
