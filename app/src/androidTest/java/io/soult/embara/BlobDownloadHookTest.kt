@@ -226,6 +226,33 @@ class BlobDownloadHookTest {
         }
     }
 
+    /**
+     * The nonce is the whole gate: it is what separates this hook, in the main frame, from any
+     * other caller WebKit handed the bridge object to. It must not be reachable from the page, and
+     * it must be interpolated as a quoted literal rather than spliced into the source.
+     */
+    @Test
+    fun keepsTheNonceOutOfReachOfThePage() {
+        val recorder = Recorder()
+        val webView = createHookedWebView(recorder)
+        try {
+            assertEquals("\"undefined\"", runJs(webView, "typeof window.NONCE"))
+            assertEquals("\"undefined\"", runJs(webView, "typeof NONCE"))
+        } finally {
+            destroy(webView)
+        }
+    }
+
+    @Test
+    fun interpolatesTheNonceAsAQuotedLiteral() {
+        // A nonce spliced in raw would let a quote or a backslash close the string and run as code.
+        val js = DownloadBridge.hookJs("a\"b\\c")
+        assertTrue(
+            "expected a JSON-quoted literal, got: " + js.substringAfter("var NONCE = ").take(40),
+            js.contains("""var NONCE = "a\"b\\c";"""),
+        )
+    }
+
     // -- scaffolding --
 
     private fun createHookedWebView(recorder: Recorder): WebView {
