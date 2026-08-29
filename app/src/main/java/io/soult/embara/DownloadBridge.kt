@@ -23,8 +23,9 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 import java.security.SecureRandom
-import kotlin.concurrent.thread
+import java.util.concurrent.Executors
 
 /**
  * Saves files the WebView wants to hand to the user.
@@ -71,8 +72,12 @@ class DownloadBridge(
     @Volatile
     private var pageNonce: String = ""
 
-    @Volatile
+    /** Budget for the current document. UI-thread only — every read and write is inside runOnUiThread. */
     private var bytesWrittenThisPage: Long = 0
+    private var filesWrittenThisPage: Int = 0
+
+    /** One writer, so a page cannot spawn a thread per call. */
+    private val writeExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "embara-download") }
 
     fun register() {
         if (!needsLegacyStoragePermission()) return
@@ -95,6 +100,7 @@ class DownloadBridge(
             .also { SecureRandom().nextBytes(it) }
             .joinToString("") { "%02x".format(it) }
         bytesWrittenThisPage = 0
+        filesWrittenThisPage = 0
     }
 
     /**
@@ -196,18 +202,30 @@ class DownloadBridge(
                 fail(R.string.download_failed)
                 return
             }
-            if (bytesWrittenThisPage + bytes.size > MAX_BYTES_PER_PAGE) {
-                fail(R.string.download_too_large)
+            val name = DownloadNaming.sanitize(suggestedName, extensionFor(mimeType))
+            if (DownloadNaming.isInstallable(name, mimeType)) {
+                // DownloadManager refuses to hand an app an installable file without going through
+                // its own confirmation; this path bypasses DownloadManager entirely, so it has to
+                // refuse for itself. Script on the page needs no gesture to click a synthetic
+                // anchor, and "TREK-4.0.1-update.apk / Saved to Downloads" is a convincing lure.
+                fail(R.string.download_failed)
                 return
             }
-            bytesWrittenThisPage += bytes.size
-
-            val name = DownloadNaming.sanitize(suggestedName, extensionFor(mimeType))
             activity.runOnUiThread {
                 if (!UrlValidator.isSameServerHost(serverHost(), pageUrl())) {
                     toast(R.string.download_failed)
                     return@runOnUiThread
                 }
+                // Accounted on the UI thread, after the host check, so a rejected call costs
+                // nothing and there is no read-modify-write race with onNewDocument().
+                if (filesWrittenThisPage >= MAX_FILES_PER_PAGE ||
+                    bytesWrittenThisPage + bytes.size > MAX_BYTES_PER_PAGE
+                ) {
+                    toast(R.string.download_too_large)
+                    return@runOnUiThread
+                }
+                bytesWrittenThisPage += bytes.size
+                filesWrittenThisPage++
                 withStoragePermission { writeToDownloads(name, mimeType, bytes) }
             }
         }
@@ -218,8 +236,15 @@ class DownloadBridge(
             fail(R.string.download_failed)
         }
 
-        private fun nonceMatches(nonce: String?): Boolean =
-            pageNonce.isNotEmpty() && nonce == pageNonce
+        private fun nonceMatches(nonce: String?): Boolean {
+            val expected = pageNonce
+            if (expected.isEmpty() || nonce == null) return false
+            // Constant-time: not practically attackable across a JNI hop, but it costs nothing.
+            return MessageDigest.isEqual(
+                nonce.toByteArray(Charsets.UTF_8),
+                expected.toByteArray(Charsets.UTF_8),
+            )
+        }
 
         private fun fail(messageId: Int) {
             activity.runOnUiThread { toast(messageId) }
@@ -227,9 +252,8 @@ class DownloadBridge(
     }
 
     private fun writeToDownloads(name: String, mimeType: String?, bytes: ByteArray) {
-        // Up to MAX_BYTES_PER_PAGE of disk I/O, and on the legacy path a directory scan — never on
-        // the main thread.
-        thread(name = "embara-download") {
+        // Disk I/O, and on the legacy path a directory scan — never on the main thread.
+        writeExecutor.execute {
             val saved = try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     writeViaMediaStore(name, mimeType, bytes)
@@ -259,22 +283,29 @@ class DownloadBridge(
         val resolver = activity.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: throw IllegalStateException("MediaStore rejected the insert")
-        resolver.openOutputStream(uri).use { it?.write(bytes) }
-        resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+        try {
+            resolver.openOutputStream(uri).use { it?.write(bytes) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+        } catch (e: Throwable) {
+            // A row left IS_PENDING=1 is invisible to the user and never reclaimed.
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
     }
 
-    /** Never clobber an existing download; MediaStore does this for us on Q+. */
+    /**
+     * Never clobber an existing download; MediaStore does this for us on Q+. Throws rather than
+     * returning a taken path — silently overwriting someone's file is worse than failing.
+     */
     private fun uniqueFile(dir: File, name: String): File {
         val stem = name.substringBeforeLast('.', name)
         val extension = name.substringAfterLast('.', "")
-        var candidate = File(dir, name)
-        var n = 1
-        while (candidate.exists() && n < MAX_NAME_COLLISIONS) {
-            val suffix = if (extension.isEmpty()) "" else ".$extension"
-            candidate = File(dir, "$stem ($n)$suffix")
-            n++
+        val suffix = if (extension.isEmpty()) "" else ".$extension"
+        for (n in 0 until MAX_NAME_COLLISIONS) {
+            val candidate = if (n == 0) File(dir, name) else File(dir, "$stem ($n)$suffix")
+            if (!candidate.exists()) return candidate
         }
-        return candidate
+        throw IllegalStateException("no free filename for $name")
     }
 
     /**
@@ -326,11 +357,19 @@ class DownloadBridge(
         /** ~24 MB of payload once base64-decoded. Guards the single-string JS bridge hop. */
         const val MAX_BASE64_LENGTH = 32 * 1024 * 1024
 
-        /** Matched by the JS-side blob.size check, so an oversized blob is refused before it is read. */
-        const val MAX_BLOB_BYTES = 24 * 1024 * 1024
+        /**
+         * Matched by the JS-side blob.size check, so an oversized blob is refused before it is read.
+         * Deliberately modest: everything TREK 4.0.0 hands a phone this way is a text export (MFA
+         * codes, .ics, .gpx), and the path costs roughly six times the payload in peak memory
+         * across the renderer and the bridge hop.
+         */
+        const val MAX_BLOB_BYTES = 8 * 1024 * 1024
 
         /** Total a single document may write, however many downloads it splits it across. */
         const val MAX_BYTES_PER_PAGE = 128L * 1024 * 1024
+
+        /** Bytes alone do not bound the cost: each accepted call is a file, a row and a toast. */
+        const val MAX_FILES_PER_PAGE = 20
 
         private const val MAX_NAME_COLLISIONS = 100
 
@@ -357,8 +396,14 @@ class DownloadBridge(
          */
         fun hookJs(nonce: String): String = """
             (function(){
+              // The nonce is refreshed on every injection rather than captured once: onPageStarted
+              // rotates it, and a hook left holding a dead nonce would silently reject every
+              // download for the rest of that document. Kept on window rather than in the closure
+              // so a later injection can update the listener that is already attached — which
+              // costs nothing, because the gate exists to stop OTHER frames, and a cross-origin
+              // frame cannot read this window's properties any more than it can read its closures.
+              window.__embaraDlNonce = ${JSONObject.quote(nonce)};
               if (window.__embaraDlHooked) return; window.__embaraDlHooked = true;
-              var NONCE = ${JSONObject.quote(nonce)};
               var MAX_BYTES = $MAX_BLOB_BYTES;
 
               // Bounded so a page that mints object urls freely (the map layers do) cannot make this
@@ -385,7 +430,7 @@ class DownloadBridge(
                 };
               } catch (_) {}
 
-              function fail(){ try { AndroidDownloadBridge.reportFailure(NONCE); } catch (_) {} }
+              function fail(){ try { AndroidDownloadBridge.reportFailure(window.__embaraDlNonce); } catch (_) {} }
 
               function deliver(name, blob){
                 try {
@@ -394,7 +439,7 @@ class DownloadBridge(
                   fr.onloadend = function(){
                     var s = String(fr.result), i = s.indexOf(',');
                     if (i < 0) { fail(); return; }
-                    AndroidDownloadBridge.saveBase64(NONCE, name, blob.type || '', s.slice(i + 1));
+                    AndroidDownloadBridge.saveBase64(window.__embaraDlNonce, name, blob.type || '', s.slice(i + 1));
                   };
                   fr.onerror = fail;
                   fr.readAsDataURL(blob);
@@ -442,7 +487,7 @@ class DownloadBridge(
                     var body = href.slice(comma + 1);
                     if (/;base64/i.test(meta)) {
                       if (body.length > MAX_BYTES) { fail(); return; }
-                      AndroidDownloadBridge.saveBase64(NONCE, name, mime, body);
+                      AndroidDownloadBridge.saveBase64(window.__embaraDlNonce, name, mime, body);
                     } else {
                       var text;
                       try { text = decodeURIComponent(body); } catch (_) { fail(); return; }

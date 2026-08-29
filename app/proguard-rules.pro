@@ -5,12 +5,15 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The @JavascriptInterface methods are reachable ONLY from the JS injected into the WebView, so R8
+# sees no caller for them. AGP's proguard-android-optimize.txt already carries this exact rule (its
+# 9.3.1 copy, lines 54-57), and the shipped release dex was checked to confirm saveBase64 /
+# reportFailure / reportScrollTop survive un-renamed — but that is a default we do not control, and
+# losing it would silently break downloads and pull-to-refresh in the release build only, with no
+# crash and no log. State it here so it cannot go away underneath us.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
 # Uncomment this to preserve the line number information for
 # debugging stack traces.

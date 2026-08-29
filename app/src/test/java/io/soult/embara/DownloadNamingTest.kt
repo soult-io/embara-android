@@ -147,4 +147,31 @@ class DownloadNamingTest {
             result.isNotEmpty() && Character.isHighSurrogate(result.last()),
         )
     }
+
+    // -- installable files --
+
+    @Test
+    fun `refuses installable files by extension`() {
+        assertTrue(DownloadNaming.isInstallable("TREK-4.0.1-update.apk", "text/plain"))
+        assertTrue(DownloadNaming.isInstallable("x.APK", null))
+        assertTrue(DownloadNaming.isInstallable("mod.apex", null))
+        assertTrue(DownloadNaming.isInstallable("lib.so", null))
+    }
+
+    @Test
+    fun `refuses installable files by mime type even under a harmless name`() {
+        assertTrue(
+            DownloadNaming.isInstallable("holiday-photos.txt", "application/vnd.android.package-archive"),
+        )
+        assertTrue(DownloadNaming.isInstallable("notes", "application/java-archive; charset=binary"))
+    }
+
+    @Test
+    fun `allows everything TREK actually exports on a phone`() {
+        assertFalse(DownloadNaming.isInstallable("trek-mfa-backup-codes.txt", "text/plain"))
+        assertFalse(DownloadNaming.isInstallable("Interrail-2026.ics", "text/calendar"))
+        assertFalse(DownloadNaming.isInstallable("day-3.gpx", "application/gpx+xml"))
+        assertFalse(DownloadNaming.isInstallable("photo.jpg", "image/jpeg"))
+        assertFalse(DownloadNaming.isInstallable("noextension", null))
+    }
 }

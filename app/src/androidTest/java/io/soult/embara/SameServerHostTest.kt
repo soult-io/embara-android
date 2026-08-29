@@ -10,9 +10,9 @@ import org.junit.runner.RunWith
  * UrlValidator.isSameServerHost depends on android.net.Uri, so it lives here rather than in the
  * JVM test (the same split as isValidScheme / UrlValidatorInstrumentedTest).
  *
- * This is the gate that decides whether a page may read the device's position and whether a
- * download is fetched with the user's session cookies, so the negative cases matter more than the
- * positive one.
+ * This is the gate that decides whether a page may read the device's position, whether a download
+ * is saved at all rather than handed to the browser, and whether the JS bridge will write a byte —
+ * so the negative cases matter more than the positive one.
  */
 @RunWith(AndroidJUnit4::class)
 class SameServerHostTest {

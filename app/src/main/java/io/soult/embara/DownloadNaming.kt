@@ -99,6 +99,29 @@ object DownloadNaming {
 
     private const val MAX_EXTENSION_BYTES = 12
 
+    /**
+     * Whether [name] or [mimeType] describes something the platform can install or execute.
+     *
+     * [DownloadManager][android.app.DownloadManager] puts its own confirmation in front of these.
+     * The blob path writes straight to Downloads with none of that, and page script can click a
+     * synthetic anchor with no user gesture at all, so it has to refuse them itself — otherwise
+     * "TREK-4.0.1-update.apk / Saved to Downloads" is a one-line lure.
+     */
+    fun isInstallable(name: String, mimeType: String?): Boolean {
+        val extension = name.substringAfterLast('.', "").lowercase()
+        if (extension in INSTALLABLE_EXTENSIONS) return true
+        val type = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return false
+        return type in INSTALLABLE_MIME_TYPES
+    }
+
+    private val INSTALLABLE_EXTENSIONS = setOf("apk", "apks", "apkm", "xapk", "apex", "dex", "jar", "so")
+
+    private val INSTALLABLE_MIME_TYPES = setOf(
+        "application/vnd.android.package-archive",
+        "application/vnd.android.dex",
+        "application/java-archive",
+    )
+
     /** Conservative set — covers Windows-illegal characters plus the ones that confuse shells. */
     private val ILLEGAL = charArrayOf('/', ' ', ':', '*', '?', '"', '<', '>', '|')
 }

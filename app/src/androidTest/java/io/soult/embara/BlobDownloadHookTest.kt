@@ -227,17 +227,28 @@ class BlobDownloadHookTest {
     }
 
     /**
-     * The nonce is the whole gate: it is what separates this hook, in the main frame, from any
-     * other caller WebKit handed the bridge object to. It must not be reachable from the page, and
-     * it must be interpolated as a quoted literal rather than spliced into the source.
+     * onPageStarted rotates the nonce, so a hook still holding the previous one would silently
+     * reject every download for the rest of that document — the exact silent failure this fixes.
+     * Re-injection must therefore update the nonce the already-attached listener uses.
+     *
+     * The nonce lives on `window`, not in the closure, precisely so that can happen. That does not
+     * weaken the gate: it exists to stop OTHER frames, and a cross-origin frame can no more read
+     * this window's properties than its closures. Same-origin script is inside the trust boundary
+     * by design — it is the TREK page itself.
      */
     @Test
-    fun keepsTheNonceOutOfReachOfThePage() {
+    fun aReinjectionUpdatesTheNonceTheHookSends() {
         val recorder = Recorder()
         val webView = createHookedWebView(recorder)
         try {
-            assertEquals("\"undefined\"", runJs(webView, "typeof window.NONCE"))
-            assertEquals("\"undefined\"", runJs(webView, "typeof NONCE"))
+            val rotated = "fedcba9876543210fedcba9876543210"
+            runJs(webView, DownloadBridge.hookJs(rotated))
+
+            runJs(webView, "blobDownload('$FILENAME', '$PAYLOAD', 'text/plain');")
+            assertTrue(recorder.awaitDelivery(DELIVERY_TIMEOUT_SECONDS))
+            assertEquals("the hook must send the CURRENT nonce, not the one it was built with",
+                rotated, recorder.nonce)
+            assertEquals(PAYLOAD, String(Base64.decode(recorder.base64!!, Base64.DEFAULT)))
         } finally {
             destroy(webView)
         }
