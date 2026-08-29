@@ -259,8 +259,8 @@ class BlobDownloadHookTest {
         // A nonce spliced in raw would let a quote or a backslash close the string and run as code.
         val js = DownloadBridge.hookJs("a\"b\\c")
         assertTrue(
-            "expected a JSON-quoted literal, got: " + js.substringAfter("var NONCE = ").take(40),
-            js.contains("""var NONCE = "a\"b\\c";"""),
+            "expected a JSON-quoted literal, got: " + js.substringAfter("window.__embaraDlNonce = ").take(40),
+            js.contains("""window.__embaraDlNonce = "a\"b\\c";"""),
         )
     }
 
