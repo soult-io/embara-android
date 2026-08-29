@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shared only so the camera app can write a picture the user is about to attach in the WebView.
+  Scoped to one cache subdirectory — nothing else in the app is exposed.
+-->
+<paths>
+    <cache-path name="webview_captures" path="webview_captures/" />
+</paths>

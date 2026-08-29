@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **Embara — for TREK**
-*Last updated: April 29, 2026*
+*Last updated: August 29, 2026*
 
 ## Overview
 
@@ -26,6 +26,25 @@ Embara stores the following data locally on your device only:
 - **WebView cache** — cached web content from your TREK server for performance
 
 This data never leaves your device except as requests to the TREK server you configured.
+
+## Device Permissions
+
+Embara asks for these only at the moment the TREK page you are viewing asks the browser for them,
+and never in the background. Soult IO receives none of it — there is no backend to receive it.
+
+- **Location** (`ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`) — TREK 4.0.0 can pin a journal
+  entry where you are standing ("Use my current location") and its mobile quick-capture screen looks
+  up the nearby place name and weather. When that happens, Android asks you first, and your position
+  is handed to the page and sent to your own TREK server. It is not stored by Embara, not retained
+  between pages, and only your configured server may ask.
+- **Camera and photos** — choosing a photo or taking one for a TREK entry opens Android's own
+  picker or camera app. Embara declares no camera permission; the picture is taken by the camera app
+  and uploaded to your TREK server. A photo taken this way is written to Embara's private cache
+  so the page can upload it, and is deleted the next time Embara starts. Photos you pick from the
+  gallery are never copied.
+- **Storage** (`WRITE_EXTERNAL_STORAGE`, Android 9 and below only) — saving a file TREK offers you,
+  such as your MFA backup codes or a trip's calendar export, into your Downloads folder. Android 10
+  and above needs no permission for this.
 
 ## Network Connections
 

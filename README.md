@@ -1,8 +1,8 @@
 # Embara — for TREK
 
-> **Community / Unofficial** — This app is not affiliated with or endorsed by the TREK project. It is an independent, open-source mobile client for use with [TREK](https://github.com/mauriceboe/TREK).
+> **Community / Unofficial** — This app is not affiliated with or endorsed by the TREK project. It is an independent, open-source mobile client for use with [TREK](https://github.com/liketrek/TREK).
 
-Android app for [TREK](https://github.com/mauriceboe/TREK) — connect to any self-hosted TREK instance from your phone.
+Android app for [TREK](https://github.com/liketrek/TREK) — connect to any self-hosted TREK instance from your phone.
 
 ## What is this?
 

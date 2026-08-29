@@ -9,8 +9,10 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
 import android.webkit.JavascriptInterface
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -50,6 +52,15 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
     // here; the pull-to-refresh guard consults it so SwipeRefreshLayout stops hijacking inner scroll.
     private val ptrBridge = PtrScrollBridge()
 
+    // TREK 4.0.0 capability bridges. Each owns one WebView surface the mobile shell needs and that
+    // WebKit refuses by default unless the app opts in: the geolocation prompt behind "Use my
+    // current location" and the mobile quick-capture sheet; the file/camera chooser behind the
+    // quick-capture and photo-upload inputs; and downloads for the mobile MFA-backup-codes and
+    // trip .ics/.gpx exports, which are blob: and so bypass DownloadManager entirely.
+    private val geolocationBridge = GeolocationBridge(serverHost = { serverHost })
+    private val fileChooserBridge = FileChooserBridge()
+    private lateinit var downloadBridge: DownloadBridge
+
     // Periodic cookie flush while RESUMED. Persists the post-login trek_session cookie to
     // disk within a couple seconds even with no navigation/onPause, defeating Chromium's
     // ~30s lazy flush window. Cancelled in onPause.
@@ -75,6 +86,18 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
         serverHost = Uri.parse(serverUrl).host?.lowercase().orEmpty()
 
         isShowingErrorPage = savedInstanceState?.getBoolean(KEY_ERROR_PAGE, false) ?: false
+
+        // registerForActivityResult must be called before the activity reaches STARTED.
+        downloadBridge = DownloadBridge(
+            activity = this,
+            serverHost = { serverHost },
+            // The WebView's MAIN-frame url. The bridge checks it before writing, so a saveBase64
+            // call cannot outlive a navigation away from the server.
+            pageUrl = { if (::webView.isInitialized) webView.url else null },
+        )
+        geolocationBridge.register(this)
+        fileChooserBridge.register(this)
+        downloadBridge.register()
 
         val rootLayout = createLayout()
         setContentView(rootLayout)
@@ -108,6 +131,12 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
             // Bridge for the JS scroll listener injected in onPageFinished (see ptrBridge).
             addJavascriptInterface(ptrBridge, PTR_BRIDGE_NAME)
+            // Bridge for the blob-download hook injected in onPageFinished (see DownloadBridge).
+            addJavascriptInterface(downloadBridge.JsInterface(), DownloadBridge.BRIDGE_NAME)
+
+            setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+                downloadBridge.onDownloadStart(url, userAgent, contentDisposition, mimeType, contentLength)
+            }
         }
 
         CookieManager.getInstance().apply {
@@ -297,6 +326,10 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             // "at top" until a scroll actually fires on the new page (the injected hook resets its
             // per-document dedupe flag automatically since window.__embaraPtrHooked is gone).
             ptrBridge.resetToTop()
+            // A new document invalidates the download hook's nonce; the replacement is injected in
+            // onPageFinished below. Deliberately not done on a SPA route change, which keeps the
+            // same document and the same already-injected hook.
+            downloadBridge.onNewDocument()
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -306,6 +339,10 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
             CookieManager.getInstance().flush()
             // Inject the capture-phase scroll listener that feeds ptrBridge (see ptrBridge / guard).
             view.evaluateJavascript(PTR_SCROLL_HOOK_JS, null)
+            // Inject the capture-phase blob/data download hook, carrying this document's nonce.
+            // evaluateJavascript targets the MAIN frame only, which is what scopes the bridge to a
+            // page Embara actually loaded rather than to any iframe it happens to embed.
+            view.evaluateJavascript(downloadBridge.currentHookJs(), null)
             // Only dismiss when fully loaded (not on intermediate redirects)
             if (view.progress >= 100) {
                 dismissRefreshSpinner()
@@ -412,6 +449,27 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
                 dismissRefreshSpinner()
             }
         }
+
+        override fun onGeolocationPermissionsShowPrompt(
+            origin: String?,
+            callback: GeolocationPermissions.Callback?
+        ) {
+            geolocationBridge.onPrompt(this@MainActivity, origin, callback)
+        }
+
+        override fun onGeolocationPermissionsHidePrompt() {
+            geolocationBridge.cancelPending()
+        }
+
+        override fun onShowFileChooser(
+            webView: WebView?,
+            filePathCallback: ValueCallback<Array<android.net.Uri>>?,
+            fileChooserParams: FileChooserParams?
+        ): Boolean = fileChooserBridge.onShowFileChooser(
+            this@MainActivity,
+            filePathCallback,
+            fileChooserParams,
+        )
     }
 
     private fun setupBackNavigation() {
@@ -462,6 +520,13 @@ class MainActivity : AppCompatActivity(), SettingsBottomSheet.Listener {
 
     override fun onDestroy() {
         cancelRefreshTimeout()
+        // WebKit's geolocation / file-chooser callbacks cannot outlive the WebView. An unanswered
+        // file-chooser callback permanently jams that input, so both are released here.
+        geolocationBridge.cancelPending()
+        fileChooserBridge.cancelPending()
+        // onCreate returns early (before the bridges are built) when no server is configured and it
+        // hands off to SetupActivity, so this activity can be destroyed without one ever existing.
+        if (::downloadBridge.isInitialized) downloadBridge.cancelPending()
         if (::webView.isInitialized) webView.destroy()
         super.onDestroy()
     }
