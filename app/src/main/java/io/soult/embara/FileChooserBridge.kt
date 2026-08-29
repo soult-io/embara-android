@@ -18,7 +18,7 @@ import java.io.File
  * Serves `<input type="file">` inside the WebView.
  *
  * TREK 4.0.0 puts file inputs on mobile surfaces that did not have them before: the quick-capture
- * sheet ships two — `accept="image/*" capture="environment"` for the camera and a plain one for the
+ * sheet ships two — an image input with a `capture` hint for the camera and a plain one for the
  * gallery — plus batch photo upload and the external photo providers in the entry editor. WebKit
  * routes all of them through `WebChromeClient.onShowFileChooser`, which does nothing unless the app
  * overrides it, so today every one of those buttons is inert.
