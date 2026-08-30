@@ -4,3 +4,25 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+
+    groups:
+      # One pull request a week for all minor and patch bumps, instead of one per dependency.
+      #
+      # Ungrouped, a single week produced five separate PRs, each running its own full lint + test
+      # job, and each edit landing on the same gradle/libs.versions.toml — so merging any one of them
+      # forced a rebase and a fresh run for every straggler.
+      #
+      # Grouping also makes a failure ATTRIBUTABLE. Five PRs failing separately on the same opaque
+      # error say nothing about which bump is at fault; one PR carrying all of them, tested together,
+      # points straight at it.
+      gradle-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+
+    # Majors are deliberately NOT grouped — they still arrive one PR at a time, because those are the
+    # ones that need reading rather than merging. Both bumps in this fleet that required a real
+    # judgement call were major-shaped: one silently broke every Robolectric test, and one looked
+    # alarming but was correcting a version line that had drifted. Neither would have got the
+    # attention it needed buried in a batch of nine.
