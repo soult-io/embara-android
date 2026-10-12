@@ -17,13 +17,14 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // T3 E2E config injection. A host-only secret file (self-hosted FRAME-DESK runner) holds the
+        // T3 E2E config injection. A host-only secret file (local/manual runs only) holds the
         // test TREK server + seeded test-account credentials as KEY=VALUE lines:
         //     SERVER_URL=https://trek-test.stabpablo.eu
         //     TREK_USER=gplay-test-acc@soult.io
         //     TREK_PASS=...
         // Read it at configure time and forward to `am instrument` as -e args — NOT baked into the APK,
-        // never committed. Absent on PR / dev machines -> args unset -> E2E journeys skip (ServerHealthCheck).
+        // never committed. Absent in CI (GitHub-hosted runners) and on most dev machines -> args unset ->
+        // E2E journeys skip (ServerHealthCheck).
         val e2eCredsFile = System.getenv("EMBARA_E2E_CREDS_FILE") ?: "/srv/android/secrets/trek-test.creds"
         val credsPath = file(e2eCredsFile)
         if (credsPath.isFile && credsPath.canRead()) {
@@ -78,7 +79,7 @@ android {
 
     // Gradle Managed Device for headless instrumented tests. aosp_atd (Automated Test Device) is
     // test-keys/userdebug so it auto-authorizes adb headless. Task: :app:aospAtdDebugAndroidTest.
-    // (Local-only pipeline exercise — NOT committed to the embara remote without approval.)
+    // CI runs this task in build.yml (instrumented-tests job).
     testOptions {
         managedDevices {
             localDevices {

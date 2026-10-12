@@ -12,13 +12,10 @@ on:
 permissions:
   contents: read
 
-# Fork-safety model. PR checks run on GitHub-hosted runners (ephemeral, secret-free — safe for
-# untrusted fork code). The heavyweight build + instrumented jobs run on the self-hosted FRAME-DESK
-# runner and are gated to push events on THIS repo (github.repository), so a fork PR can never select
-# it. Pair this with the repo Actions setting "Require approval for all outside collaborators"
-# (Settings → Actions → General → Fork pull request workflows) so even the GitHub-hosted PR check
-# needs maintainer approval before it runs on a fork PR.
-
+# Fork-safety model (public repo). Every job runs on GitHub-hosted runners: ephemeral, secret-free
+# except release, and free for public repos. Nothing here can reach the self-hosted FRAME-DESK runner,
+# and this file must not target it. Signing secrets live ONLY in the release job (tag-triggered).
+# Fork PRs also need maintainer approval (Settings → Actions → General).
 jobs:
   # Quick checks on PRs — runs on GitHub-hosted (safe for public repo forks)
   check:
@@ -54,14 +51,10 @@ jobs:
       - name: Run lint and unit tests
         run: ./gradlew lint test
 
-  # Full build on push to main — runs on self-hosted FRAME-DESK.
-  # Gated to pushes on this repo so a fork PR can never run on the self-hosted runner.
+  # Full build on push to main and on v* tags.
   build:
     if: github.event_name == 'push' && github.repository == 'soult-io/embara-android'
-    runs-on: [self-hosted, linux, android]
-
-    env:
-      ANDROID_HOME: /opt/android-sdk
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -77,14 +70,20 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
       - name: Run lint, tests, and build APKs
         run: ./gradlew lint test assembleDebug assembleRelease bundleRelease
-
-      - name: Copy build outputs for MCP access
-        run: |
-          install -m 0664 app/build/outputs/apk/debug/app-debug.apk /srv/android/builds/embara-debug.apk || echo "Debug APK not found, skipping"
-          install -m 0664 app/build/outputs/apk/release/app-release-unsigned.apk /srv/android/builds/embara-release-unsigned.apk || echo "Release APK not found, skipping"
-          install -m 0664 app/build/outputs/bundle/release/app-release.aab /srv/android/builds/embara-release.aab || echo "Release AAB not found, skipping"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -127,16 +126,13 @@ jobs:
             [ -f "$f" ] && echo "| $(basename $f) | $(du -h $f | cut -f1) |" >> $GITHUB_STEP_SUMMARY
           done
 
-  # Instrumented tests on emulator — runs after build, does not block release
+  # Instrumented tests via Gradle Managed Devices (aospAtd) — runs after build, does not block release.
   instrumented-tests:
     if: >-
       github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v') &&
       github.repository == 'soult-io/embara-android'
     needs: build
-    runs-on: [self-hosted, linux, android]
-
-    env:
-      ANDROID_HOME: /opt/android-sdk
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -152,26 +148,32 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Check for connected emulator
-        id: emulator-check
-        run: |
-          SERIAL=$(adb devices | grep -E '^emulator-' | head -1 | awk '{print $1}')
-          if [ -z "$SERIAL" ]; then
-            echo "No emulator found — skipping instrumented tests"
-            echo "available=false" >> $GITHUB_OUTPUT
-          else
-            echo "Found emulator: $SERIAL"
-            echo "available=true" >> $GITHUB_OUTPUT
-            echo "serial=$SERIAL" >> $GITHUB_OUTPUT
-          fi
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: gradle-
 
-      - name: Run instrumented tests
-        if: steps.emulator-check.outputs.available == 'true'
-        run: ./gradlew connectedDebugAndroidTest
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      # GitHub-hosted Linux runners support hardware-accelerated emulators once /dev/kvm is opened to
+      # the runner user.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run instrumented tests (Gradle Managed Device)
+        run: ./gradlew :app:aospAtdDebugAndroidTest -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
         continue-on-error: true
 
       - name: Upload test results
-        if: always() && steps.emulator-check.outputs.available == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: instrumented-test-results
@@ -179,6 +181,7 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+  # Sign + publish on a v* tag — runs on GitHub-hosted (holds the signing secrets, no self-hosted needed).
   release:
     if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'soult-io/embara-android'
     needs: build
