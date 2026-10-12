@@ -6,10 +6,10 @@ import androidx.test.platform.app.InstrumentationRegistry
  * Configuration for the T3 end-to-end journeys, injected at RUN time via instrumentation arguments —
  * never committed, never baked into the APK.
  *
- * On the self-hosted FRAME-DESK runner, app/build.gradle.kts reads a host-only secret file
- * (/srv/android/secrets/trek-test.creds) at configure time and forwards the test-server URL + the
- * seeded gplay-test-acc credentials to `am instrument` as `-e` arguments. On GitHub-hosted PR runners
- * and dev machines the file is absent, the arguments are unset, and the server-dependent journeys skip
+ * On a host that has the secret file (local/manual runs; path from EMBARA_E2E_CREDS_FILE, default
+ * /srv/android/secrets/trek-test.creds), app/build.gradle.kts reads it at configure time and forwards
+ * the test-server URL + the seeded gplay-test-acc credentials to `am instrument` as `-e` arguments. In
+ * CI (GitHub-hosted runners) and on most dev machines the file is absent, the arguments are unset, and the server-dependent journeys skip
  * (see [ServerHealthCheck]) rather than fail — so a red E2E run always means the APP broke, not infra.
  *
  * Argument keys:
